@@ -8,7 +8,7 @@
 | 阶段 | 目标 | 状态 |
 |---|---|---|
 | D0 | 方案设计与文档基线 | ✅ 已完成 |
-| M0 | Runtime + CEO 工具 + Fake Position | ⬜ 未开始 |
+| M0 | Runtime + CEO 工具 + Fake Position | ✅ 已完成 |
 | M1 | 单机真实 harness 闭环 | ⬜ 未开始 |
 | M2 | 多电脑节点 | ⬜ 未开始 |
 | M3 | IM 与语音入口 | ⬜ 未开始 |
@@ -31,28 +31,42 @@
 
 ## M0：Runtime + CEO 工具 + Fake Position
 
-### 目标
+### 状态
 
-在 CEO harness 内跑通一条不依赖真实模型员工的完整管理链路。
+✅ 已完成（2026-10-21）
 
-### 交付物
+### 实际交付物
 
-- `packages/core`：领域模型、Zod schema、任务状态机。
-- `packages/store`：SQLite + Drizzle，核心表。
-- `apps/runtime`：Runtime API + MCP server 骨架。
-- `packages/adapters`：Fake Harness。
-- `packages/ceo-skill`：CEO 守则和工具说明。
-- 一个最小 `company.*` 工具集：`brief`、`plan.create`、`task.assign`、`inbox`、`status`。
-- 启动脚本和本地开发说明。
+- `src/domain/schema.ts`：领域模型、Zod schema、报告与上下文包。
+- `src/domain/state.ts`：任务状态机。
+- `src/store/store.ts`：SQLite（`node:sqlite`）持久化，核心表与仓储方法。
+- `src/service/company-service.ts`：计划、指派、执行、继续、返工、取消、决策、招聘。
+- `src/adapters/fake.ts`：Fake Harness，支持 done / blocked / needs_decision / failed。
+- `src/mcp-server.ts`：MCP stdio server，暴露 `company_*` 工具。
+- `src/http-server.ts`：本地 HTTP API（仅绑定 `127.0.0.1`）。
+- `src/cli.ts` + `src/demo.ts`：CLI 和端到端演示。
+- `ceo-skill/SKILL.md`：CEO 守则和工具工作流。
+- `docs/ceo-harness-setup.md`：CEO harness 接入说明。
+- `tests/`：状态机、CompanyService、MCP stdio 集成测试。
+
+### 验收证据
+
+- `pnpm test`：3 个测试文件、10 个测试通过，包含 MCP stdio 集成测试。
+- `pnpm demo`：3 个 Fake Position 按依赖顺序完成，返回 3 份结构化报告。
+- `pnpm serve` + `POST /api/demo`：HTTP API 返回同样的执行结果。
+- 持久化测试：关闭并重新打开 SQLite 后，任务和报告仍在。
+- 继续任务测试：同一任务追加“年付改成 8 折”，生成第二份报告并更新 session/context。
+- 决策测试：任务进入 `waiting_approval`，记录决策后恢复为 `assigned`。
+- 未新增聊天 UI；人类入口仍是 CEO harness。
 
 ### 验收
 
-- 在 CEO harness 里对 CEO 说一个目标。
-- CEO 创建任务 DAG，派给 Fake Position。
-- Fake Position 返回结构化报告。
-- CEO 汇总并在同一个聊天窗口汇报。
-- 重启 Runtime 后，任务和报告还在。
-- 不出现第二个聊天界面。
+- ✅ CEO 创建任务 DAG，派给 Fake Position。
+- ✅ Fake Position 返回结构化报告。
+- ✅ CEO 汇总并在同一个聊天窗口汇报（通过 MCP 工具和 CLI 验证）。
+- ✅ 重启 Runtime 后，任务和报告还在。
+- ✅ 不出现第二个聊天界面。
+- ⚠️ 当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，DSH 接入方式见 `ceo-harness-setup.md`。
 
 ### 不做
 

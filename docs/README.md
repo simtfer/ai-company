@@ -9,6 +9,9 @@
 | [architecture.md](architecture.md) | 总体架构、对象模型、CEO 入口、会话连续性、多电脑、安全 |
 | [roadmap.md](roadmap.md) | D0–M4 阶段、交付物、验收标准 |
 | [progress.md](progress.md) | 当前进展、阶段状态、变更日志、下一步 |
+| [ceo-harness-setup.md](ceo-harness-setup.md) | MCP / CLI 接入 CEO harness 的配置与工具清单 |
+
+相关入口：[项目 README](../README.md) · [CEO skill](../ceo-skill/SKILL.md)
 
 ## 一句话架构
 
@@ -32,8 +35,9 @@ Node A / Node B（各台电脑上的 Position）
 ## 当前状态
 
 - D0 方案设计：已完成。
-- M0 Runtime + Fake Position：未开始。
-- 下一步：搭建 Runtime 和 CEO 工具接口。
+- M0 Runtime + Fake Position：已完成。
+- 验收证据：`pnpm test` 10 passed、`pnpm demo`、MCP stdio 集成测试、HTTP API smoke test。
+- 下一步：M1 真实 Claude Code / opencode / pi 适配。
 
 ## 更新规则
 

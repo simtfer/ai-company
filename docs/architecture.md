@@ -156,6 +156,8 @@ company.node.list() / enroll() / revoke()
 
 `assign` 立即返回任务 ID，不阻塞 CEO 的聊天回合。需要等待时用 `wait` 带超时；长任务结果进入 `inbox`，下次对话汇报。
 
+在 MCP 中，工具名使用下划线形式，例如 `company_brief`、`company_plan_create`、`company_task_assign`；上面的点号只是逻辑分组。
+
 ### 5.3 CEO 守则
 
 CEO harness 需要一段固定的 system prompt / skill：
@@ -539,30 +541,34 @@ IM / 语音
 
 | 层 | 选型 |
 |---|---|
-| Runtime | Node.js 22 + TypeScript |
-| 服务 | Fastify + `ws` + Zod |
-| 数据库 | SQLite WAL + Drizzle（MVP）；以后换 Postgres |
+| Runtime | Node.js 22+ + TypeScript |
+| 服务 | 内置 `node:http` + MCP SDK（M0）；需要时再引入 Fastify/ws |
+| 数据库 | SQLite WAL + 内置 `node:sqlite`（M0）；Drizzle/Postgres 后置 |
 | 队列 | SQLite 租约表，先不引入 Redis |
 | CEO 工具 | MCP server；CLI shim 兜底 |
 | CLI | commander |
-| 进程 | execa，参数数组，进程树清理 |
-| 日志 | pino + 每 Run 一份 JSONL |
-| 测试 | Vitest + Fake Harness |
+| 进程 | execa，参数数组，进程树清理（M1） |
+| 日志 | 结构化事件表 + pino/JSONL（M1） |
+| 测试 | Vitest + Fake Harness + MCP stdio 集成测试 |
+
+M0 先用单包结构，避免过早拆包；M1 引入真实 adapter 和 node-agent 时再拆：
 
 ```text
-apps/
-  runtime/           # API、WS、状态机、调度、MCP server
-  cli/               # aic 命令（运维/调试）
-  node-agent/        # 远程节点服务
-packages/
-  core/              # 领域模型、Zod schema、状态机
-  orchestrator/      # CEO 工具实现、路由、预算、重试
-  adapters/          # claude-code / opencode / pi / generic-cli
-  store/             # SQLite + Drizzle
-  ceo-skill/         # CEO 守则、工具说明、提示词
+src/
+  domain/            # 领域模型、Zod schema、状态机
+  store/             # SQLite + 仓储
+  service/           # CompanyService、上下文包、任务执行
+  adapters/          # Fake Harness；M1 加 claude-code / opencode / pi
+  cli.ts             # aic 命令
+  demo.ts            # 端到端演示
+  mcp-server.ts      # MCP stdio server
+  http-server.ts     # 本地 HTTP API
+tests/               # 状态机、服务、MCP 集成测试
+ceo-skill/           # CEO 守则、工具说明
+docs/                # 架构、路线、进展
 ```
 
-MVP 打包成一个 `aic` 可执行文件：启动后同时提供 Runtime API、MCP server 和本机 Node Agent。数据库放 `~/.aic/company.db`，产物放 `~/.aic/artifacts/`。
+MVP 打包成一个 `aic` 可执行文件：启动后同时提供 Runtime API、MCP server 和本机 Node Agent。默认数据库是 `./.aic/company.db`，可用 `AIC_DB_PATH` 覆盖；产物放 `./.aic/artifacts/`。
 
 ## 14. 主要风险
 

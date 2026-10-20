@@ -1,0 +1,31 @@
+{
+  "name": "ai-company",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI company orchestrated by a CEO harness",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "cli": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp-server.ts",
+    "serve": "tsx src/cli.ts serve",
+    "demo": "tsx src/cli.ts demo",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "commander": "^15.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
