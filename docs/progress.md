@@ -10,6 +10,7 @@
 |---|---|---|
 | 方案设计 | ✅ 已完成 | 架构、路线、进展文档已建立 |
 | 工作区 | ✅ 可用 | `D:\tmp\b` 已可写入 |
+| 代码仓库 | ✅ 已建立 | [simtfer/ai-company](https://github.com/simtfer/ai-company)（private） |
 | M0 Runtime | ⬜ 未开始 | 下一步 |
 | M1 真实 harness | ⬜ 未开始 | 依赖 M0 |
 | M2 多电脑 | ⬜ 未开始 | 依赖 M1 |
@@ -37,6 +38,8 @@
 - 新增 `docs/progress.md`，作为后续每个阶段的进展记录。
 - 新增 `docs/README.md`，作为文档索引。
 - 确认关键方向：CEO harness 是唯一人类入口；不做独立聊天软件；保留无界面 Company Runtime；Position 使用“长员工、短会话”。
+- 新增 `.gitignore`，初始化 git 仓库，默认分支 `main`。
+- 创建私有远程仓库 [simtfer/ai-company](https://github.com/simtfer/ai-company)，关联 `origin`，提交 `37c928e` 并推送。
 
 ## 下一步
 
