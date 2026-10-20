@@ -257,6 +257,8 @@ interface HarnessAdapter {
 
 具体参数以本机 `--help` 为准，不硬编码某个版本的 flag。
 
+M1 实测：opencode `1.18.35` 可用，使用 `run --format json`、`--session` 恢复；Claude Code 二进制在本机未安装，adapter 仅做实验性预留。
+
 ### 7.3 职位生命周期
 
 ```text
@@ -558,15 +560,19 @@ src/
   domain/            # 领域模型、Zod schema、状态机
   store/             # SQLite + 仓储
   service/           # CompanyService、上下文包、任务执行
-  adapters/          # Fake Harness；M1 加 claude-code / opencode / pi
+  adapters/          # fake / opencode / claude-code / 进程与提示词
+  workspace/         # git worktree、提交、diff 产物
   cli.ts             # aic 命令
-  demo.ts            # 端到端演示
+  demo.ts            # Fake 端到端演示
+  demo-opencode.ts   # opencode 真实闭环演示
   mcp-server.ts      # MCP stdio server
   http-server.ts     # 本地 HTTP API
-tests/               # 状态机、服务、MCP 集成测试
+tests/               # 状态机、服务、adapter、worktree、session、MCP
 ceo-skill/           # CEO 守则、工具说明
 docs/                # 架构、路线、进展
 ```
+
+M1 已落地：`opencode` 真实 JSONL adapter、`GitWorkspaceManager`、session resume/回退、测试证据和任务级审批闸门。Claude Code adapter 是实验性预留，pi 未接入。
 
 MVP 打包成一个 `aic` 可执行文件：启动后同时提供 Runtime API、MCP server 和本机 Node Agent。默认数据库是 `./.aic/company.db`，可用 `AIC_DB_PATH` 覆盖；产物放 `./.aic/artifacts/`。
 

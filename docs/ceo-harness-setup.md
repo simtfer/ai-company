@@ -44,6 +44,7 @@ pnpm cli brief
 pnpm cli status
 pnpm cli inbox
 pnpm cli demo
+pnpm cli probe
 ```
 
 CLI 和 MCP 读写同一个 SQLite 数据库，可以混用。
@@ -52,22 +53,25 @@ CLI 和 MCP 读写同一个 SQLite 数据库，可以混用。
 
 让 CEO harness 调用：
 
-1. `company_brief`：应返回公司手册、3 个 Fake 职位和最近线程。
-2. `company_status`：应返回职位状态和任务计数。
-3. `company_demo`：应跑通一次完整链路，并返回 3 份报告。
+1. `company_brief`：应返回公司手册、职位和最近线程。
+2. `company_adapters`：应返回 fake 和 opencode 的版本/能力。
+3. `company_demo`：应跑通一次 Fake 链路，并返回 3 份报告。
+4. 真实 opencode：`pnpm demo:opencode`，会产生少量模型费用。
 
 或者命令行验证：
 
 ```bash
 pnpm test
 pnpm demo
+pnpm probe
+pnpm demo:opencode
 ```
 
 ## 3. 当前 DSH 会话
 
-M0 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支持 MCP server 配置，把上面的 JSON 加入其 MCP 配置即可。
+M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支持 MCP server 配置，把上面的 JSON 加入其 MCP 配置即可。
 
-如果当前 DSH 版本暂不支持 MCP，仍可用 CLI 桥让 CEO 调用同样的能力；后续 M1 再按 DSH 的插件/工具接口做原生适配。
+如果当前 DSH 版本暂不支持 MCP，仍可用 CLI 桥让 CEO 调用同样的能力；后续再按 DSH 的插件/工具接口做原生适配。
 
 ## 4. 工具清单
 
@@ -91,7 +95,16 @@ M0 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_position_pause` | 暂停职位 |
 | `company_position_fire` | 解雇职位 |
 | `company_node_list` | 节点/办公室列表 |
-| `company_demo` | M0 端到端演示 |
+| `company_adapters` | 探测 fake / opencode / Claude Code 适配器能力 |
+| `company_demo` | M0 Fake 端到端演示 |
+
+M1 真实执行说明：
+
+- `company_position_hire` 可以创建 `harness_kind: "opencode"` 的职位，`workspace` 指向一个 git 仓库。
+- 任务会使用独立 worktree；`constraints.test_command` 会在任务完成后执行并写入证据。
+- `constraints.requires_approval: true` 会让任务先进入 `waiting_approval`，由 CEO 生成决策卡，人类批准后才执行。
+- `constraints.base_ref` 可以让 QA 任务从 dev 分支创建 worktree。
+- MCP server 已注册 opencode；Claude Code 适配器存在，但本机没有 `claude` 二进制，暂不作为默认可执行 harness。
 
 ## 5. 安全边界
 

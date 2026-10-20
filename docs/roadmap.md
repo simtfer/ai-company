@@ -9,7 +9,7 @@
 |---|---|---|
 | D0 | 方案设计与文档基线 | ✅ 已完成 |
 | M0 | Runtime + CEO 工具 + Fake Position | ✅ 已完成 |
-| M1 | 单机真实 harness 闭环 | ⬜ 未开始 |
+| M1 | 单机真实 harness 闭环 | 🟡 核心完成 |
 | M2 | 多电脑节点 | ⬜ 未开始 |
 | M3 | IM 与语音入口 | ⬜ 未开始 |
 | M4 | 质量、成本与打包加固 | ⬜ 未开始 |
@@ -77,37 +77,57 @@
 
 ## M1：单机真实 Harness 闭环
 
+### 状态
+
+🟡 核心完成（2026-10-21）
+
+opencode 已实机验证；Claude Code 适配器已实现但本机未安装；pi 未接入。
+
 ### 目标
 
-让至少两个真实 harness 作为 Position 完成一次真实任务，并支持继续、返工和审批。
+让至少两个真实 Position 完成一次真实任务，并支持继续、返工和审批。
 
-### 交付物
+### 实际交付物
 
-- Claude Code 适配器。
-- opencode 或 pi agent 适配器。
-- 通用 CLI 适配器（兜底）。
-- git worktree 隔离和分支提交。
-- Session Manager：`session_ref` 保存、校验、恢复、失效。
-- Context Pack Builder。
-- `continue` / `reopen` / `new task` 语义。
-- 审批桥：harness 权限请求 → CEO → 人类。
-- 事件流、JSONL 日志、产物登记。
-- 最小预算和超时控制。
+- `OpencodeAdapter`：JSONL 事件解析、session id、token/cost、tool 事件。
+- `ClaudeCodeAdapter`：实验性非交互 stream-json 适配器，未做真实验证。
+- `GitWorkspaceManager`：按任务创建 worktree、自动提交、diff 产物。
+- Session Manager：`session_ref` 保存、校验、resume、过期回退重建。
+- Context Pack Builder：任务、记忆、相关报告、workspace、session 信息。
+- `continue` / `reopen` / 相关新任务语义。
+- 执行前审批闸门：`requires_approval` 任务先等待人类决策。
+- 事件流写入 SQLite + `.aic/logs/<run_id>.jsonl`。
+- 任务级 `test_command`、超时、预算分钟数、diff/test 产物登记。
+- `pnpm demo:opencode` 真实演示：`opencode-dev` 修改代码，`opencode-qa` 从 dev 分支验收。
+
+### 验收证据
+
+- `pnpm demo:opencode`：两个真实 opencode Position 完成；dev 产出代码变更，QA 从 dev 分支验收。
+- dev 报告包含 `hello.mjs` / `hello.test.mjs` 变更、commit、diff 产物。
+- `node --test` 由任务执行并写入证据；2 个测试通过。
+- 真实 session continuation 手动验证：`FIRST` → `SECOND`，同一个 session 恢复。
+- `pnpm test`：6 个测试文件、17 个测试通过。
+- session 测试覆盖：有效 session resume、过期 session 回退重建。
+- 审批测试覆盖：`waiting_approval` → 批准 → 执行完成。
+- 测试失败测试：`test_command` 非零退出时任务标记 failed。
 
 ### 验收
 
-- 一句真实需求，CEO 派给两个真实 Position，至少一个产出代码变更。
-- 同一任务追加要求时，能 resume 或从 Context Pack 重建，不丢关键上下文。
-- Position 完成后，CEO 能派一个相关新任务，并带上原报告和分支。
-- 危险操作会停下来等人类批准。
-- Runtime 重启后，任务、session 引用和交接单可恢复。
-- resume 失败时自动重建，不中断任务。
+- ✅ 真实需求派给两个真实 Position，至少一个产出代码变更。
+- ✅ 同一任务追加要求时 resume；resume 失败自动用 Context Pack 重建。
+- ✅ Position 完成后派相关 QA 新任务，带上 dev 分支和报告。
+- ✅ 标记为需要审批的任务会停下来等人类批准。
+- ✅ Runtime 重启后任务、报告、session 引用可恢复。
+- ✅ 测试失败会阻断任务完成。
+- ⚠️ 只验证了 opencode；Claude Code 适配器未在真实环境验证，pi 未接入。
+- ⚠️ 当前审批是任务级执行前闸门；harness 工具执行中的实时权限桥接尚未实现。
 
 ### 不做
 
 - 多电脑。
 - IM / 语音。
 - 自动合并到主分支（先进入合并队列）。
+- 真实 Claude Code / pi 的强制验证（等二进制和凭证可用）。
 
 ## M2：多电脑节点
 

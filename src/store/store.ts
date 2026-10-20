@@ -311,6 +311,18 @@ export class Store {
       );
   }
 
+  updateNodeCapabilities(
+    id: string,
+    capabilities: Record<string, unknown>,
+    lastSeenAt = nowIso(),
+  ): void {
+    this.db
+      .prepare(
+        "UPDATE nodes SET capabilities_json = ?, last_seen_at = ?, status = 'online' WHERE id = ?",
+      )
+      .run(encodeJson(capabilities), lastSeenAt, id);
+  }
+
   listNodes(companyId = MAIN_COMPANY_ID): Node[] {
     const rows = this.db
       .prepare("SELECT * FROM nodes WHERE company_id = ? ORDER BY name")

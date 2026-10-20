@@ -165,6 +165,74 @@ describe("CompanyService", () => {
     expect(service.store.listOpenDecisions()).toHaveLength(0);
   });
 
+  it("holds a task at a pre-flight approval gate before dispatch", async () => {
+    const plan = service.createPlan({
+      title: "审批闸门",
+      goal: "验证执行前审批",
+      tasks: [
+        {
+          key: "approve",
+          title: "需要审批的执行",
+          objective: "执行一个敏感动作",
+          acceptance: ["批准后完成"],
+          depends_on: [],
+          assignee: "frontend-1",
+          priority: 0,
+          constraints: {
+            requires_approval: true,
+            approval_question: "是否执行敏感动作？",
+            approval_options: ["批准", "拒绝"],
+          },
+        },
+      ],
+    });
+
+    const assigned = service.assignTask(plan.tasks[0].id);
+    expect(assigned.status).toBe("waiting_approval");
+    const decisions = service.store.listOpenDecisions();
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].question).toContain("敏感动作");
+
+    service.resolveDecision(decisions[0].id, "批准", "测试批准");
+    expect(service.store.getTask(plan.tasks[0].id)?.status).toBe("assigned");
+
+    const results = await service.runReady(plan.thread.id);
+    expect(results).toHaveLength(1);
+    expect(results[0].report.status).toBe("done");
+    expect(service.store.getTask(plan.tasks[0].id)?.status).toBe("done");
+  });
+
+  it("marks a task failed when its test command fails", async () => {
+    const plan = service.createPlan({
+      title: "测试命令失败",
+      goal: "验证测试证据闸门",
+      tasks: [
+        {
+          key: "fail-test",
+          title: "运行失败测试",
+          objective: "执行一个失败的测试命令",
+          acceptance: ["测试通过"],
+          depends_on: [],
+          assignee: "frontend-1",
+          priority: 0,
+          constraints: {
+            test_command: 'node -e "process.exit(1)"',
+          },
+        },
+      ],
+    });
+    service.assignAll(plan.thread.id);
+    const [execution] = await service.runReady(plan.thread.id);
+
+    expect(execution.report.status).toBe("failed");
+    expect(execution.task.status).toBe("failed");
+    expect(execution.report.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "test", result: "fail" }),
+      ]),
+    );
+  });
+
   it("rejects cyclic task graphs", () => {
     expect(() =>
       service.createPlan({

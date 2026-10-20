@@ -53,6 +53,7 @@ describe("MCP server", () => {
     expect(names).toContain("company_brief");
     expect(names).toContain("company_plan_create");
     expect(names).toContain("company_task_continue");
+    expect(names).toContain("company_adapters");
     expect(names).toContain("company_demo");
 
     const result = await client.callTool({

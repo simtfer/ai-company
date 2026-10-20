@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { CompanyService } from "./service/company-service";
+import { OpencodeAdapter } from "./adapters/opencode";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 export interface HttpServerOptions {
@@ -56,6 +57,7 @@ export async function startHttpServer(
   const service = new CompanyService({
     dbPath: options.dbPath,
     fakeDelayMs: 0,
+    adapters: [new OpencodeAdapter()],
   });
   const port = options.port ?? 4317;
 
@@ -91,6 +93,10 @@ export async function startHttpServer(
       }
       if (method === "GET" && path === "/api/nodes") {
         sendJson(res, 200, service.nodeList());
+        return;
+      }
+      if (method === "GET" && path === "/api/adapters") {
+        sendJson(res, 200, await service.probeAdapters());
         return;
       }
 

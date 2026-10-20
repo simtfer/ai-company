@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { CompanyService } from "./service/company-service";
+import { OpencodeAdapter } from "./adapters/opencode";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 type JsonResult = {
@@ -305,6 +306,16 @@ export function buildMcpServer(service: CompanyService): McpServer {
   );
 
   server.registerTool(
+    "company_adapters",
+    {
+      description:
+        "Probe registered harness adapters and report version and resume/streaming capability.",
+      inputSchema: {},
+    },
+    async () => guarded(() => service.probeAdapters()),
+  );
+
+  server.registerTool(
     "company_demo",
     {
       description:
@@ -320,7 +331,11 @@ export function buildMcpServer(service: CompanyService): McpServer {
 }
 
 export async function startMcpServer(dbPath?: string): Promise<void> {
-  const service = new CompanyService({ dbPath, fakeDelayMs: 0 });
+  const service = new CompanyService({
+    dbPath,
+    fakeDelayMs: 0,
+    adapters: [new OpencodeAdapter()],
+  });
   const server = buildMcpServer(service);
   const transport = new StdioServerTransport();
   await server.connect(transport);

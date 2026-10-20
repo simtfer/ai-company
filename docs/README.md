@@ -36,8 +36,12 @@ Node A / Node B（各台电脑上的 Position）
 
 - D0 方案设计：已完成。
 - M0 Runtime + Fake Position：已完成。
-- 验收证据：`pnpm test` 10 passed、`pnpm demo`、MCP stdio 集成测试、HTTP API smoke test。
-- 下一步：M1 真实 Claude Code / opencode / pi 适配。
+- M1 单机真实 Harness：🟡 核心完成。
+  - opencode 实机验证；两个真实 Position 完成 dev → QA 流程。
+  - worktree、session resume/回退、测试证据、审批闸门已实现。
+  - Claude Code 适配器为实验性；pi 未接入。
+- 验收证据：`pnpm test` 17 passed、`pnpm demo:opencode`、真实 session continuation。
+- 下一步：补测 Claude/pi，然后进入 M2 多电脑节点。
 
 ## 更新规则
 

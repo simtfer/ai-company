@@ -2,7 +2,7 @@
 
 > 最后更新：2026-10-21
 >
-> 当前阶段：D0 已完成，M0 已完成，M1 未开始
+> 当前阶段：D0 已完成，M0 已完成，M1 核心完成，M2 未开始
 > 入口：CEO harness（不做独立聊天软件）
 
 ## 当前状态
@@ -15,8 +15,12 @@
 | M0 Runtime | ✅ 已完成 | SQLite、任务状态机、CompanyService、Context Pack |
 | M0 CEO 工具 | ✅ 已完成 | MCP stdio + HTTP API + CLI |
 | M0 Fake Position | ✅ 已完成 | 3 个 Fake 职位，依赖顺序执行 |
-| M1 真实 harness | ⬜ 未开始 | 下一步 |
-| M2 多电脑 | ⬜ 未开始 | 依赖 M1 |
+| M1 opencode 适配 | ✅ 已完成 | 真实 JSONL、session、usage、tool 事件 |
+| M1 worktree | ✅ 已完成 | 每任务独立 worktree，自动提交和 diff |
+| M1 Session Manager | ✅ 已完成 | resume 有效，过期自动回退重建 |
+| M1 审批闸门 | ✅ 已完成 | 执行前 `waiting_approval` |
+| M1 Claude Code 适配 | 🟡 实验性 | 代码完成，本机无 `claude` 二进制 |
+| M2 多电脑 | ⬜ 未开始 | 下一步 |
 | M3 IM/语音 | ⬜ 未开始 | 依赖 M2 |
 | M4 加固 | ⬜ 未开始 | 依赖 M3 |
 
@@ -26,7 +30,7 @@
 |---|---|---|---|
 | D0 方案设计 | ✅ 已完成 | 2026-10-21 | `architecture.md` / `roadmap.md` / `progress.md` |
 | M0 Runtime + Fake Position | ✅ 已完成 | 2026-10-21 | `pnpm test` 10 passed；`pnpm demo`；MCP stdio 集成测试 |
-| M1 单机真实 Harness | ⬜ 未开始 | — | — |
+| M1 单机真实 Harness | 🟡 核心完成 | 2026-10-21 | 17 tests；`pnpm demo:opencode`；真实 session continuation |
 | M2 多电脑节点 | ⬜ 未开始 | — | — |
 | M3 IM / 语音 | ⬜ 未开始 | — | — |
 | M4 质量与打包 | ⬜ 未开始 | — | — |
@@ -57,16 +61,32 @@
 - 验收：`pnpm demo` 完成 3 个任务的依赖顺序执行；重启持久化、continue、决策恢复均有测试覆盖。
 - M0 完成；M1（真实 Claude Code / opencode / pi 适配）未开始。
 
+### 2026-10-21 — M1
+
+- 探测本机 harness：`opencode 1.18.35` 可用；`claude`、`pi` 未安装。
+- 实现 `src/adapters/opencode.ts`：真实 `opencode run --format json`，解析 session、text、tool、usage、cost。
+- 实现 `src/adapters/claude-code.ts`：实验性 stream-json 适配器，未被真实环境验证。
+- 实现 `src/adapters/process.ts`：JSONL 子进程、超时、AbortSignal、进程树清理。
+- 实现 `src/workspace/git-workspace.ts`：worktree、自动提交、diff/变更文件、diff 产物。
+- 实现真实 session 管理：有效 session resume；过期 session 回退 Context Pack 重建。
+- 实现任务级 `test_command`、超时、预算分钟数、`.aic/logs/<run_id>.jsonl`。
+- 实现执行前审批闸门：`requires_approval` → `waiting_approval` → 批准 → 执行。
+- 新增 `pnpm demo:opencode`：`opencode-dev` 修改 `hello.mjs`，`opencode-qa` 从 dev 分支验收。
+- 真实验证：dev/QA 都返回 done；`node --test` 2 passed；真实 session `FIRST → SECOND` 恢复成功。
+- 测试：6 个测试文件、17 个测试通过，覆盖 adapter、worktree、session 回退、审批、测试失败。
+- M1 核心完成；Claude Code 和 pi 的真实环境验证仍待补。
+
 ## 下一步
 
-1. 进入 M1：先探测本机已安装 harness 的版本和 CLI 能力。
-2. 实现 Claude Code 适配器和通用 CLI 适配器，保留 Fake Harness 作为测试替身。
-3. 实现 git worktree、Session Manager、Context Pack 的真实恢复路径和审批桥。
+1. 补测 Claude Code / pi 真实环境；如果暂时没有二进制，保留实验性标记。
+2. 实现 harness 工具执行中的实时审批桥（当前只有执行前闸门）。
+3. 进入 M2：Node Agent、注册/心跳/租约、远程派工和产物回传。
 4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 
 ## 阻塞与风险
 
 - 当前无阻塞。
-- 风险：真实 harness 的实际安装版本尚未探测；M1 开始前需要 `probe()` 记录版本和能力。
-- 风险：当前 DSH 版本的原生 MCP 配置尚未接入；M0 已用 MCP stdio 客户端验证，DSH 接入方式见 `docs/ceo-harness-setup.md`。
+- 风险：本机只有 opencode 真实可用；Claude Code 适配器未在真实 CLI 上验证，pi 未接入。
+- 风险：当前审批是任务级执行前闸门；harness 内部工具执行中的实时权限桥接尚未实现。
+- 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 前只能在下一次对话汇报增量。

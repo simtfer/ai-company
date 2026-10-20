@@ -1,5 +1,12 @@
 import type { ContextPack, Position, Report, Task } from "../domain/schema";
 import { ReportSchema } from "../domain/schema";
+import type {
+  HarnessAdapter,
+  HarnessCapabilities,
+  HarnessEvent,
+  HarnessRunResult,
+  RunInput,
+} from "./types";
 
 export interface FakeExecutionInput {
   task: Task;
@@ -20,6 +27,52 @@ export class FakeHarness {
   readonly kind = "fake";
 
   constructor(private readonly delayMs = 5) {}
+
+  async probe(): Promise<HarnessCapabilities> {
+    return {
+      kind: this.kind,
+      supports_resume: true,
+      supports_streaming: false,
+      version: "fake-m0",
+    };
+  }
+
+  async start(
+    input: RunInput,
+    onEvent?: (event: HarnessEvent) => void,
+  ): Promise<HarnessRunResult> {
+    const events: HarnessEvent[] = [
+      { type: "status", status: "starting", message: "fake harness" },
+    ];
+    const report = await this.execute(input);
+    events.push({ type: "text", text: report.summary });
+    events.push({
+      type: "usage",
+      tokens: 0,
+      cost_usd: 0,
+      session_id: `fake:${input.position.name}`,
+    });
+    if (report.status === "failed") {
+      events.push({ type: "error", message: report.summary });
+    }
+    for (const event of events) onEvent?.(event);
+    return {
+      report,
+      session_id: `fake:${input.position.name}`,
+      usage: { tokens: 0, cost_usd: 0 },
+      events,
+      exit_code: 0,
+    };
+  }
+
+  async resume(
+    sessionId: string,
+    input: RunInput,
+    onEvent?: (event: HarnessEvent) => void,
+  ): Promise<HarnessRunResult> {
+    const result = await this.start(input, onEvent);
+    return { ...result, session_id: sessionId };
+  }
 
   async execute(input: FakeExecutionInput): Promise<Report> {
     if (this.delayMs > 0) {

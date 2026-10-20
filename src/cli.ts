@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { CompanyService } from "./service/company-service";
+import { OpencodeAdapter } from "./adapters/opencode";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 const program = new Command();
@@ -16,6 +17,7 @@ function service(): CompanyService {
   return new CompanyService({
     dbPath: program.opts().db as string | undefined,
     fakeDelayMs: 0,
+    adapters: [new OpencodeAdapter()],
   });
 }
 
@@ -110,6 +112,50 @@ program
           summary: execution.report.summary,
         })),
         status: result.status,
+      });
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("probe")
+  .description("probe opencode and other real harness adapters")
+  .action(async () => {
+    const { OpencodeAdapter } = await import("./adapters/opencode");
+    const instance = new CompanyService({
+      dbPath: program.opts().db as string | undefined,
+      fakeDelayMs: 0,
+      adapters: [new OpencodeAdapter()],
+    });
+    try {
+      print(await instance.probeAdapters());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("demo:opencode")
+  .description("run the real opencode M1 demo on a disposable git repository")
+  .argument("[goal]", "goal for the demo")
+  .action(async (goal: string | undefined) => {
+    const { OpencodeAdapter } = await import("./adapters/opencode");
+    const { runOpencodeDemo } = await import("./demo-opencode");
+    const instance = new CompanyService({
+      dbPath: program.opts().db as string | undefined,
+      fakeDelayMs: 0,
+      adapters: [new OpencodeAdapter()],
+    });
+    try {
+      const result = await runOpencodeDemo(instance, goal);
+      print({
+        repo: result.repo,
+        thread: result.plan.thread.id,
+        reports: result.reports,
+        status: result.status,
+        log_dir: ".aic/logs",
+        worktrees: ".aic/worktrees",
       });
     } finally {
       instance.close();
