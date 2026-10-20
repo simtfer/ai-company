@@ -5,7 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { CompanyService } from "./service/company-service";
-import { OpencodeAdapter } from "./adapters/opencode";
+import { createRealAdapters } from "./adapters";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 export interface HttpServerOptions {
@@ -54,10 +54,11 @@ function asString(value: unknown, field: string): string {
 export async function startHttpServer(
   options: HttpServerOptions = {},
 ): Promise<Server> {
+  const { adapters } = createRealAdapters();
   const service = new CompanyService({
     dbPath: options.dbPath,
     fakeDelayMs: 0,
-    adapters: [new OpencodeAdapter()],
+    adapters,
   });
   const port = options.port ?? 4317;
 

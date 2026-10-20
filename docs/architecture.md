@@ -252,12 +252,12 @@ interface HarnessAdapter {
 | CEO | DSH / DeepSeek | 原生 runtime + 管理工具 |
 | 前端/后端 | Claude Code | 非交互 JSON 流 + session resume |
 | 全栈/脚本 | opencode | CLI 适配器 |
-| 调研/文档 | pi agent | 通用 CLI 适配器 |
-| 兜底 | 任意 CLI | 可配置命令、输入方式、JSONL 解析器 |
+| 调研/文档 | pi | `-p --mode json` + `--session-id` |
+| 兜底 | 任意 CLI | 可配置命令、输入方式、JSONL 解析器（后续） |
 
 具体参数以本机 `--help` 为准，不硬编码某个版本的 flag。
 
-M1 实测：opencode `1.18.35` 可用，使用 `run --format json`、`--session` 恢复；Claude Code 二进制在本机未安装，adapter 仅做实验性预留。
+M1 实测：opencode `1.18.35` 使用 `run --format json`、`--session` 恢复；Claude Code `2.1.304` 使用 `-p --output-format stream-json`、`--resume`；pi `1.2.0` 使用 `-p --mode json`、`--session-id`。三者均完成真实 session 连续和代码修改验证。
 
 ### 7.3 职位生命周期
 
@@ -572,7 +572,7 @@ ceo-skill/           # CEO 守则、工具说明
 docs/                # 架构、路线、进展
 ```
 
-M1 已落地：`opencode` 真实 JSONL adapter、`GitWorkspaceManager`、session resume/回退、测试证据和任务级审批闸门。Claude Code adapter 是实验性预留，pi 未接入。
+M1 已落地：Claude Code / pi / opencode 三个真实 adapter、自动发现与密钥环境注入、`GitWorkspaceManager`、session resume/回退、测试证据、任务级审批闸门和工具白名单。
 
 MVP 打包成一个 `aic` 可执行文件：启动后同时提供 Runtime API、MCP server 和本机 Node Agent。默认数据库是 `./.aic/company.db`，可用 `AIC_DB_PATH` 覆盖；产物放 `./.aic/artifacts/`。
 

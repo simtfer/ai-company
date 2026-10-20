@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { CompanyService } from "./service/company-service";
-import { OpencodeAdapter } from "./adapters/opencode";
+import { createRealAdapters } from "./adapters";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 const program = new Command();
@@ -17,7 +17,7 @@ function service(): CompanyService {
   return new CompanyService({
     dbPath: program.opts().db as string | undefined,
     fakeDelayMs: 0,
-    adapters: [new OpencodeAdapter()],
+    adapters: createRealAdapters().adapters,
   });
 }
 
@@ -120,16 +120,93 @@ program
 
 program
   .command("probe")
-  .description("probe opencode and other real harness adapters")
+  .description("probe discovered real harness adapters")
   .action(async () => {
-    const { OpencodeAdapter } = await import("./adapters/opencode");
     const instance = new CompanyService({
       dbPath: program.opts().db as string | undefined,
       fakeDelayMs: 0,
-      adapters: [new OpencodeAdapter()],
+      adapters: createRealAdapters().adapters,
     });
     try {
       print(await instance.probeAdapters());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("demo:harnesses")
+  .description("verify Claude Code, pi and opencode with a tiny real prompt")
+  .action(async () => {
+    const { runHarnessDemo } = await import("./demo-harnesses");
+    const instance = new CompanyService({
+      dbPath: program.opts().db as string | undefined,
+      fakeDelayMs: 0,
+      adapters: createRealAdapters().adapters,
+    });
+    try {
+      const result = await runHarnessDemo(instance);
+      print({
+        discovered: result.discovered,
+        skipped: result.skipped,
+        reports: result.executions.map((execution) => ({
+          title: execution.task.title,
+          position: execution.task.assignee,
+          status: execution.report.status,
+          summary: execution.report.summary,
+          session_id: (execution.report.evidence.find(
+            (item) =>
+              typeof item === "object" &&
+              item !== null &&
+              "session_id" in item,
+          ) as { session_id?: string } | undefined)?.session_id,
+        })),
+      });
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("demo:code")
+  .description("run real Claude Code and pi code edits with test evidence")
+  .action(async () => {
+    const { runCodeDemo } = await import("./demo-code");
+    const instance = new CompanyService({
+      dbPath: program.opts().db as string | undefined,
+      fakeDelayMs: 0,
+      adapters: createRealAdapters().adapters,
+    });
+    try {
+      const result = await runCodeDemo(instance);
+      print({
+        reports: result.executions.map((execution) => ({
+          title: execution.task.title,
+          position: execution.task.assignee,
+          status: execution.report.status,
+          summary: execution.report.summary,
+          changes: execution.report.changes,
+          evidence: execution.report.evidence,
+        })),
+        status: result.status,
+      });
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("demo:sessions")
+  .description("verify real session continuation for Claude Code, pi and opencode")
+  .action(async () => {
+    const { runSessionDemo } = await import("./demo-sessions");
+    const instance = new CompanyService({
+      dbPath: program.opts().db as string | undefined,
+      fakeDelayMs: 0,
+      adapters: createRealAdapters().adapters,
+    });
+    try {
+      print(await runSessionDemo(instance));
     } finally {
       instance.close();
     }
@@ -140,12 +217,11 @@ program
   .description("run the real opencode M1 demo on a disposable git repository")
   .argument("[goal]", "goal for the demo")
   .action(async (goal: string | undefined) => {
-    const { OpencodeAdapter } = await import("./adapters/opencode");
     const { runOpencodeDemo } = await import("./demo-opencode");
     const instance = new CompanyService({
       dbPath: program.opts().db as string | undefined,
       fakeDelayMs: 0,
-      adapters: [new OpencodeAdapter()],
+      adapters: createRealAdapters().adapters,
     });
     try {
       const result = await runOpencodeDemo(instance, goal);

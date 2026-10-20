@@ -21,7 +21,7 @@ description: Use when acting as the CEO of the AI Company. Manages positions, pl
 ## 标准工作流
 
 1. `company_brief`：读取公司手册、职位、最近线程。
-2. `company_adapters`：确认真实 harness 是否可用；目前本机只有 opencode。
+2. `company_adapters`：确认真实 harness 是否可用；本机已发现 claude-code、pi、opencode。
 3. 如果目标不清楚，先问人类一个聚焦的问题。
 4. `company_plan_create`：创建任务 DAG，写清验收标准。
 5. `company_task_assign_all`：把有负责人的排队任务指派出去。
@@ -50,16 +50,18 @@ C. 先保留占位符
 
 ## 真实任务（M1）
 
-- 招聘真实职位时使用 `harness_kind: "opencode"`，`workspace` 指向一个 git 仓库，`model` 例如 `deepseek/deepseek-flash`。
+- 招聘真实职位时使用 `harness_kind: "claude-code" | "pi" | "opencode"`，`workspace` 指向一个 git 仓库。
+- 模型示例：pi 用 `qianwenai/deepseek-v4.1-flash-1017`，opencode 用 `deepseek/deepseek-flash`；Claude Code 默认读取本机 settings。
 - 任务在独立 worktree 中执行；完成后检查报告里的 `changes`、`evidence` 和 `handoff`。
 - 需要测试证据时，在任务 `constraints` 中设置 `test_command`。
+- 需要限制工具时，设置 `constraints.allowed_tools` / `denied_tools`。
 - QA 从 dev 分支开始时，在 QA 任务 `constraints` 中设置 `base_ref: "task/<dev_task_id>"`。
 - 需要人类批准时，设置 `constraints.requires_approval: true`；任务会先进入 `waiting_approval`。
 - 不要把一个真实任务同时派给多个会写文件的 Position；用依赖关系和 `base_ref` 串行化。
 
 ## M1 限制
 
-- opencode 已实机验证；Claude Code 适配器是实验性的，本机没有 `claude` 二进制；pi 未接入。
-- 当前审批是任务执行前闸门；harness 工具执行过程中的实时权限桥还未实现。
+- claude-code、pi、opencode 均已实机验证；三个 harness 的 session 连续和代码修改均已通过。
+- 当前审批是任务执行前闸门 + 工具白名单；harness 工具执行过程中的实时权限桥还未实现。
 - 任务完成后的主动推送要等 M3 的 IM 桥；现在在下次对话用 `company_inbox` 汇报。
 - 如果当前 CEO harness 不支持 MCP，可先用 `pnpm cli` 作为工具桥，但人类入口仍然是 CEO harness。

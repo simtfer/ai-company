@@ -2,7 +2,7 @@
 
 > 最后更新：2026-10-21
 >
-> 当前阶段：D0 已完成，M0 已完成，M1 核心完成，M2 未开始
+> 当前阶段：D0 已完成，M0 已完成，M1 已完成，M2 未开始
 > 入口：CEO harness（不做独立聊天软件）
 
 ## 当前状态
@@ -16,10 +16,12 @@
 | M0 CEO 工具 | ✅ 已完成 | MCP stdio + HTTP API + CLI |
 | M0 Fake Position | ✅ 已完成 | 3 个 Fake 职位，依赖顺序执行 |
 | M1 opencode 适配 | ✅ 已完成 | 真实 JSONL、session、usage、tool 事件 |
+| M1 Claude Code 适配 | ✅ 已完成 | 2.1.304 真实 stream-json、session、测试通过 |
+| M1 pi 适配 | ✅ 已完成 | 1.2.0 真实 JSON、session、测试通过 |
+| M1 harness 自动发现 | ✅ 已完成 | nvm / WorkBuddy / scoop；支持环境变量覆盖 |
 | M1 worktree | ✅ 已完成 | 每任务独立 worktree，自动提交和 diff |
-| M1 Session Manager | ✅ 已完成 | resume 有效，过期自动回退重建 |
-| M1 审批闸门 | ✅ 已完成 | 执行前 `waiting_approval` |
-| M1 Claude Code 适配 | 🟡 实验性 | 代码完成，本机无 `claude` 二进制 |
+| M1 Session Manager | ✅ 已完成 | 三个 harness 均已实测 resume |
+| M1 审批与工具白名单 | ✅ 已完成 | `requires_approval`、`allowed_tools`、`denied_tools` |
 | M2 多电脑 | ⬜ 未开始 | 下一步 |
 | M3 IM/语音 | ⬜ 未开始 | 依赖 M2 |
 | M4 加固 | ⬜ 未开始 | 依赖 M3 |
@@ -30,7 +32,7 @@
 |---|---|---|---|
 | D0 方案设计 | ✅ 已完成 | 2026-10-21 | `architecture.md` / `roadmap.md` / `progress.md` |
 | M0 Runtime + Fake Position | ✅ 已完成 | 2026-10-21 | `pnpm test` 10 passed；`pnpm demo`；MCP stdio 集成测试 |
-| M1 单机真实 Harness | 🟡 核心完成 | 2026-10-21 | 17 tests；`pnpm demo:opencode`；真实 session continuation |
+| M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
 | M2 多电脑节点 | ⬜ 未开始 | — | — |
 | M3 IM / 语音 | ⬜ 未开始 | — | — |
 | M4 质量与打包 | ⬜ 未开始 | — | — |
@@ -63,30 +65,34 @@
 
 ### 2026-10-21 — M1
 
-- 探测本机 harness：`opencode 1.18.35` 可用；`claude`、`pi` 未安装。
+- 探测本机 harness：Claude Code 2.1.304（nvm v24）、pi 1.2.0（WorkBuddy 内置 Node）、opencode 1.18.35（scoop）均可用。
 - 实现 `src/adapters/opencode.ts`：真实 `opencode run --format json`，解析 session、text、tool、usage、cost。
-- 实现 `src/adapters/claude-code.ts`：实验性 stream-json 适配器，未被真实环境验证。
+- 实现 `src/adapters/claude-code.ts`：真实 `claude -p --output-format stream-json`，session resume、token/cost、tool 事件。
+- 实现 `src/adapters/pi.ts`：真实 `pi -p --mode json`，session-id resume、usage、tool 事件。
+- 实现 `src/adapters/discovery.ts`：自动发现非 PATH 安装，支持 `AIC_CLAUDE_COMMAND` / `AIC_PI_COMMAND` / `AIC_OPENCODE_COMMAND` 覆盖。
+- 实现 `src/adapters/env.ts`：从 Windows 用户环境读取模型密钥，仅传给子进程，不写日志。
 - 实现 `src/adapters/process.ts`：JSONL 子进程、超时、AbortSignal、进程树清理。
 - 实现 `src/workspace/git-workspace.ts`：worktree、自动提交、diff/变更文件、diff 产物。
 - 实现真实 session 管理：有效 session resume；过期 session 回退 Context Pack 重建。
 - 实现任务级 `test_command`、超时、预算分钟数、`.aic/logs/<run_id>.jsonl`。
-- 实现执行前审批闸门：`requires_approval` → `waiting_approval` → 批准 → 执行。
+- 实现执行前审批闸门 + 工具白名单：`requires_approval`、`allowed_tools`、`denied_tools`。
 - 新增 `pnpm demo:opencode`：`opencode-dev` 修改 `hello.mjs`，`opencode-qa` 从 dev 分支验收。
-- 真实验证：dev/QA 都返回 done；`node --test` 2 passed；真实 session `FIRST → SECOND` 恢复成功。
-- 测试：6 个测试文件、17 个测试通过，覆盖 adapter、worktree、session 回退、审批、测试失败。
-- M1 核心完成；Claude Code 和 pi 的真实环境验证仍待补。
+- 新增 `pnpm demo:harnesses`：三个真实 harness 连通性验证，均返回预期 token。
+- 新增 `pnpm demo:sessions`：三个真实 harness 均完成 `FIRST → SECOND` session 连续，`resumed: true`。
+- 新增 `pnpm demo:code`：Claude Code 添加 `goodbye`、pi 添加 `shout`，`node --test` 均 2 passed。
+- 测试：7 个测试文件、18 个测试通过，覆盖 adapter、worktree、session 回退、审批、测试失败、pi 解析。
+- M1 完成；下一步 M2 多电脑节点。
 
 ## 下一步
 
-1. 补测 Claude Code / pi 真实环境；如果暂时没有二进制，保留实验性标记。
-2. 实现 harness 工具执行中的实时审批桥（当前只有执行前闸门）。
-3. 进入 M2：Node Agent、注册/心跳/租约、远程派工和产物回传。
-4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
+1. 进入 M2：Node Agent、注册/心跳/租约、远程派工和产物回传。
+2. 在 M2 中补实时权限询问桥（当前是执行前闸门 + 工具白名单）。
+3. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 
 ## 阻塞与风险
 
 - 当前无阻塞。
-- 风险：本机只有 opencode 真实可用；Claude Code 适配器未在真实 CLI 上验证，pi 未接入。
-- 风险：当前审批是任务级执行前闸门；harness 内部工具执行中的实时权限桥接尚未实现。
+- 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
+- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 内部工具执行中的实时权限询问桥尚未实现，后置到 M2/M4。
 - 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 前只能在下一次对话汇报增量。

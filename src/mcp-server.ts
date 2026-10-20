@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { CompanyService } from "./service/company-service";
-import { OpencodeAdapter } from "./adapters/opencode";
+import { createRealAdapters } from "./adapters";
 import { runDemo, DEMO_GOAL } from "./demo";
 
 type JsonResult = {
@@ -331,10 +331,11 @@ export function buildMcpServer(service: CompanyService): McpServer {
 }
 
 export async function startMcpServer(dbPath?: string): Promise<void> {
+  const { adapters } = createRealAdapters();
   const service = new CompanyService({
     dbPath,
     fakeDelayMs: 0,
-    adapters: [new OpencodeAdapter()],
+    adapters,
   });
   const server = buildMcpServer(service);
   const transport = new StdioServerTransport();

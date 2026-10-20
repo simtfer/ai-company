@@ -7,21 +7,24 @@
 - 一个 harness 实例就是一个职位（Position）。
 - Company Runtime 是无界面后台，负责任务、会话、审批、审计和节点。
 
-当前进度：**M1 核心完成**。opencode 已作为两个真实 Position（开发 + QA）跑通任务、worktree、测试证据和 session 连续；Claude Code 适配器已实现，但本机未安装，属于实验性。
+当前进度：**M1 完成**。Claude Code、pi、opencode 均已用真实 CLI 验证；支持 worktree、测试证据、session 恢复、任务级审批和工具白名单。
 
 ## 快速开始
 
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 17 个测试
-pnpm probe         # 探测 fake / opencode 适配器
+pnpm test          # 18 个测试
+pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
-真实 opencode 演示（需要本机 opencode 已登录，会消耗少量模型额度）：
+真实 harness 演示（会消耗少量模型额度）：
 
 ```bash
-pnpm demo:opencode
+pnpm demo:harnesses   # 三个 harness 各回一个 token
+pnpm demo:sessions    # 三个 harness 各做一次 session 连续
+pnpm demo:code        # Claude Code 和 pi 真实修改代码
+pnpm demo:opencode    # opencode dev + QA 闭环
 ```
 
 其他命令：
@@ -70,14 +73,18 @@ MCP 配置示例：
 ## M1 已实现
 
 - `OpencodeAdapter`：真实 opencode JSONL 事件、session id、token/cost、tool 事件。
-- `ClaudeCodeAdapter`：实验性适配器；本机没有 `claude` 二进制，尚未做真实验证。
+- `ClaudeCodeAdapter`：真实 Claude Code 2.1.304，stream-json、session、token/cost、tool 事件。
+- `PiAdapter`：真实 pi 1.2.0，JSON 事件、session、usage、tool 事件。
+- 自动发现非 PATH 安装：Claude Code（nvm）、pi（WorkBuddy 内置 Node）、opencode（scoop）。
+- 自动加载 Windows 用户环境变量中的模型密钥，不落日志。
 - 每个真实任务使用独立 git worktree；完成后自动提交、生成 diff 产物。
-- Session Manager：有效 session 走 resume，过期/失败自动回退到 Context Pack 重建。
+- Session Manager：有效 session 走 resume，过期/失败自动回退到 Context Pack 重建；三种 harness 均已实测。
 - 任务级 `test_command`：测试通过/失败进入报告证据，并影响任务状态。
-- 执行前审批闸门：`requires_approval` 的任务先进入 `waiting_approval`，批准后才派工。
+- 执行前审批闸门 + 工具白名单：`requires_approval`、`allowed_tools`、`denied_tools`。
 - 运行事件写入 SQLite 和 `.aic/logs/<run_id>.jsonl`。
 - 超时、预算分钟数、任务级产物登记。
 - 真实 opencode 演示：`opencode-dev` 修改代码，`opencode-qa` 从 dev 分支验收并跑测试。
+- 真实 Claude/pi 演示：分别修改 `hello.mjs` 和测试，`node --test` 通过。
 
 ## M0 已实现
 
@@ -93,4 +100,4 @@ MCP 配置示例：
 - 远程 Node Agent（M2）。
 - IM / 语音（M3）。
 - Web 聊天界面。
-- 已验证的 Claude Code / pi 真实环境（M1 后续补测）。
+- harness 工具执行中的实时权限询问桥（当前是执行前审批 + 工具白名单）。

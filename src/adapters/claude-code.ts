@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import type { Report } from "../domain/schema";
+import { findClaudeCommand } from "./discovery";
+import { harnessEnvironment } from "./env";
 import { runJsonlProcess } from "./process";
 import { buildEmployeePrompt } from "./prompt";
 import {
@@ -19,6 +21,7 @@ export interface ClaudeCodeAdapterOptions {
   model?: string;
   permissionMode?: string;
   defaultTimeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
 }
 
 type AnyRecord = Record<string, unknown>;
@@ -68,13 +71,15 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   private readonly model?: string;
   private readonly permissionMode: string;
   private readonly defaultTimeoutMs: number;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(options: ClaudeCodeAdapterOptions = {}) {
-    this.command = options.command ?? "claude";
+    this.command = options.command ?? findClaudeCommand() ?? "claude";
     this.commandArgs = options.commandArgs ?? [];
     this.model = options.model;
     this.permissionMode = options.permissionMode ?? "acceptEdits";
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 10 * 60 * 1000;
+    this.env = { ...harnessEnvironment(), ...options.env };
   }
 
   async probe(): Promise<HarnessCapabilities> {
@@ -83,6 +88,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         encoding: "utf8",
         timeout: 15_000,
         windowsHide: true,
+        env: { ...process.env, ...this.env },
       }).trim();
       return {
         kind: this.kind,
@@ -124,6 +130,18 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     if (sessionId) args.push("--resume", sessionId);
     const model = input.position.model ?? this.model;
     if (model) args.push("--model", model);
+    const allowed = Array.isArray(input.task.constraints.allowed_tools)
+      ? input.task.constraints.allowed_tools.map(String)
+      : [];
+    const denied = Array.isArray(input.task.constraints.denied_tools)
+      ? input.task.constraints.denied_tools.map(String)
+      : [];
+    if (allowed.length > 0) {
+      args.push("--allowedTools", allowed.join(","));
+    }
+    if (denied.length > 0) {
+      args.push("--disallowedTools", denied.join(","));
+    }
     args.push(
       "-p",
       buildEmployeePrompt(input.task, input.context, input.instruction),
@@ -132,6 +150,8 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       "--verbose",
       "--permission-mode",
       this.permissionMode,
+      "--permission-prompts",
+      "none",
     );
 
     const events: HarnessEvent[] = [];
@@ -148,6 +168,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
 
     const result = await runJsonlProcess(this.command, args, {
       cwd: input.cwd,
+      env: this.env,
       timeoutMs:
         input.timeout_ms ??
         (input.task.budget.minutes

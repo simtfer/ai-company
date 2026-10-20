@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import type { Report } from "../domain/schema";
+import { findOpencodeCommand } from "./discovery";
 import { runJsonlProcess } from "./process";
 import { buildEmployeePrompt } from "./prompt";
 import {
@@ -102,7 +103,7 @@ export class OpencodeAdapter implements HarnessAdapter {
   private readonly defaultTimeoutMs: number;
 
   constructor(options: OpencodeAdapterOptions = {}) {
-    this.command = options.command ?? "opencode";
+    this.command = options.command ?? findOpencodeCommand() ?? "opencode";
     this.commandArgs = options.commandArgs ?? [];
     this.model = options.model ?? "deepseek/deepseek-flash";
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 10 * 60 * 1000;

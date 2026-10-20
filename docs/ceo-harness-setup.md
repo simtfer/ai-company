@@ -54,9 +54,9 @@ CLI 和 MCP 读写同一个 SQLite 数据库，可以混用。
 让 CEO harness 调用：
 
 1. `company_brief`：应返回公司手册、职位和最近线程。
-2. `company_adapters`：应返回 fake 和 opencode 的版本/能力。
+2. `company_adapters`：应返回 fake、claude-code、pi、opencode 的版本/能力。
 3. `company_demo`：应跑通一次 Fake 链路，并返回 3 份报告。
-4. 真实 opencode：`pnpm demo:opencode`，会产生少量模型费用。
+4. 真实 harness：`pnpm demo:harnesses` / `demo:sessions` / `demo:code`，会产生模型费用。
 
 或者命令行验证：
 
@@ -64,6 +64,9 @@ CLI 和 MCP 读写同一个 SQLite 数据库，可以混用。
 pnpm test
 pnpm demo
 pnpm probe
+pnpm demo:harnesses
+pnpm demo:sessions
+pnpm demo:code
 pnpm demo:opencode
 ```
 
@@ -95,16 +98,18 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_position_pause` | 暂停职位 |
 | `company_position_fire` | 解雇职位 |
 | `company_node_list` | 节点/办公室列表 |
-| `company_adapters` | 探测 fake / opencode / Claude Code 适配器能力 |
+| `company_adapters` | 探测 fake / claude-code / pi / opencode 适配器能力 |
 | `company_demo` | M0 Fake 端到端演示 |
 
 M1 真实执行说明：
 
-- `company_position_hire` 可以创建 `harness_kind: "opencode"` 的职位，`workspace` 指向一个 git 仓库。
+- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "pi" | "opencode"` 的职位，`workspace` 指向一个 git 仓库。
+- 本机会自动发现：nvm 中的 Claude Code、WorkBuddy 内置的 pi、scoop 的 opencode；也可用 `AIC_CLAUDE_COMMAND` / `AIC_PI_COMMAND` / `AIC_OPENCODE_COMMAND` 覆盖。
 - 任务会使用独立 worktree；`constraints.test_command` 会在任务完成后执行并写入证据。
 - `constraints.requires_approval: true` 会让任务先进入 `waiting_approval`，由 CEO 生成决策卡，人类批准后才执行。
+- `constraints.allowed_tools` / `constraints.denied_tools` 会映射到 Claude 的 `--allowedTools` / `--disallowedTools` 和 pi 的 `--tools`。
 - `constraints.base_ref` 可以让 QA 任务从 dev 分支创建 worktree。
-- MCP server 已注册 opencode；Claude Code 适配器存在，但本机没有 `claude` 二进制，暂不作为默认可执行 harness。
+- MCP server 已注册所有发现的真实 harness；真实任务会产生模型费用。
 
 ## 5. 安全边界
 
