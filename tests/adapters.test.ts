@@ -33,6 +33,9 @@ function input(): RunInput {
     inputs: [],
     budget: {},
     deadline: null,
+    lease_owner: null,
+    lease_expires_at: null,
+    lease_token: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   } as Task;

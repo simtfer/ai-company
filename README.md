@@ -7,14 +7,14 @@
 - 一个 harness 实例就是一个职位（Position）。
 - Company Runtime 是无界面后台，负责任务、会话、审批、审计和节点。
 
-当前进度：**M1 完成**。Claude Code、pi、opencode 均已用真实 CLI 验证；支持 worktree、测试证据、session 恢复、任务级审批和工具白名单。
+当前进度：**M2 完成**。Claude Code、pi、opencode 均已实机验证；支持 worktree、测试证据、session 恢复、任务级审批、工具白名单和多电脑节点。
 
 ## 快速开始
 
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 18 个测试
+pnpm test          # 21 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -25,6 +25,7 @@ pnpm demo:harnesses   # 三个 harness 各回一个 token
 pnpm demo:sessions    # 三个 harness 各做一次 session 连续
 pnpm demo:code        # Claude Code 和 pi 真实修改代码
 pnpm demo:opencode    # opencode dev + QA 闭环
+pnpm demo:multi-node  # 两个 Node Agent 远程执行
 ```
 
 其他命令：
@@ -34,8 +35,11 @@ pnpm cli init       # 初始化并查看公司 brief
 pnpm cli status     # 当前谁在做什么
 pnpm cli inbox      # 最近报告和待决策
 pnpm cli threads    # 目标线程
+pnpm cli node:token # 创建一次性节点注册令牌
+pnpm cli node:join  # 在另一台电脑加入节点
 pnpm mcp            # 启动 MCP stdio server，供 CEO harness 调用
-pnpm serve          # 启动本地 HTTP API（默认 127.0.0.1:4317）
+pnpm serve          # 启动 HTTP API（默认 127.0.0.1:4317）
+pnpm serve --host 0.0.0.0 --port 4317   # 跨机器时绑定内网/Tailscale
 ```
 
 ## CEO harness 接入
@@ -69,6 +73,18 @@ MCP 配置示例：
 - [docs/roadmap.md](docs/roadmap.md)：D0–M4 路线
 - [docs/progress.md](docs/progress.md)：阶段进展
 - [docs/ceo-harness-setup.md](docs/ceo-harness-setup.md)：MCP 接入说明
+- [docs/multi-node.md](docs/multi-node.md)：多电脑节点部署与节点管理
+
+## M2 已实现
+
+- Node Agent：注册、心跳、claim、events、complete、租约续期。
+- 一次性 enrollment token（30 分钟、单次使用）+ node token。
+- 远程任务租约、过期重排、断线后重新领取。
+- 远程测试文本和 diff 产物回写控制平面。
+- 节点管理：`company_node_enroll`、`company_node_list`、`company_node_drain`、`company_node_revoke`。
+- 远程职位支持 `node_id` 和相对 workspace。
+- 本机双节点演示：`pnpm demo:multi-node`。
+- 文档：[docs/multi-node.md](docs/multi-node.md)。
 
 ## M1 已实现
 
@@ -97,7 +113,6 @@ MCP 配置示例：
 
 ## 当前未包含
 
-- 远程 Node Agent（M2）。
 - IM / 语音（M3）。
 - Web 聊天界面。
 - harness 工具执行中的实时权限询问桥（当前是执行前审批 + 工具白名单）。

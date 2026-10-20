@@ -10,7 +10,7 @@
 | D0 | 方案设计与文档基线 | ✅ 已完成 |
 | M0 | Runtime + CEO 工具 + Fake Position | ✅ 已完成 |
 | M1 | 单机真实 harness 闭环 | ✅ 已完成 |
-| M2 | 多电脑节点 | ⬜ 未开始 |
+| M2 | 多电脑节点 | ✅ 已完成 |
 | M3 | IM 与语音入口 | ⬜ 未开始 |
 | M4 | 质量、成本与打包加固 | ⬜ 未开始 |
 
@@ -137,31 +137,50 @@ Claude Code 2.1.304、pi 1.2.0、opencode 1.18.35 均已实机验证。
 
 ## M2：多电脑节点
 
+### 状态
+
+✅ 已完成（2026-10-21）
+
 ### 目标
 
 CEO 能管理另一台电脑上的 Position，并统一调度。
 
-### 交付物
+### 实际交付物
 
-- `apps/node-agent`：注册、心跳、能力上报、任务执行、事件回传。
-- 节点注册令牌和撤销机制。
-- 任务租约、断线重连、租约过期重排。
-- 远程产物回传：git 分支优先，对象存储兜底。
-- `company.node.*` 工具：list、enroll、drain、revoke。
-- CEO 聊天里的文本组织图/节点状态。
+- `src/node/agent.ts`：Node Agent，注册、心跳、claim、events、complete、租约续期。
+- `src/node/executor.ts`：节点本地 worktree/adapter/test/artifact 执行器。
+- 节点注册：一次性 enrollment token（30 分钟、单次使用）+ node token。
+- 任务租约：默认 60 秒，执行期间续租；过期自动回到 `assigned`。
+- 远程产物回传：测试文本和 diff 写入控制平面 `.aic/artifacts/remote-*`。
+- 节点管理工具：`company_node_enroll`、`company_node_list`、`company_node_drain`、`company_node_revoke`。
+- 远程职位：`company_position_hire` 支持 `node_id` 和相对 workspace。
+- CLI：`pnpm cli node:token`、`pnpm cli node:join`、`pnpm serve --host`。
+- 文档：`docs/multi-node.md`。
+
+### 验收证据
+
+- `pnpm demo:multi-node`：本机启动两个 HTTP Node Agent，各执行一个远程任务，均 done。
+- 测试：两个节点注册；远程派工；测试产物回传；租约过期重排；drain/revoke；一次令牌不可复用。
+- 真实远程 opencode smoke test：远程节点返回 `REMOTE_REAL_OK`。
+- `pnpm test`：8 个测试文件、21 个测试通过。
+- `pnpm probe`：四个 adapter 仍可用。
 
 ### 验收
 
-- 本机和另一台电脑各注册一个节点。
-- CEO 能把任务派到远程节点并拿到报告。
-- 远程节点断线后任务重新排队；恢复后能继续或重建。
-- CEO 能暂停/排空/撤销一个节点。
-- 关闭 CEO harness 再打开，Runtime 和节点状态仍在。
+- ✅ 本机和模拟的第二台电脑各注册一个节点。
+- ✅ CEO 能把任务派到远程节点并拿到报告。
+- ✅ 租约过期后任务重新排队。
+- ✅ CEO 能排空/撤销节点，撤销后 token 不可用。
+- ✅ Runtime 持久化节点、职位、任务和产物。
+- ✅ 节点可以运行真实 harness（opencode 远程 smoke test）。
+- ⚠️ M2 传输是 HTTP 拉取，不是 WSS；没有内建 TLS，跨公网需 Tailscale/WireGuard/反向代理。
+- ⚠️ 远程 git 分支留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 
 ### 不做
 
 - 公网暴露控制平面（先用 Tailscale/WireGuard）。
 - 跨节点自动迁移正在运行的任务（先重排/重建）。
+- WSS 传输和双向流式事件（HTTP 轮询已满足 M2，后续替换传输层）。
 
 ## M3：IM 与语音入口
 

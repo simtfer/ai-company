@@ -10,6 +10,7 @@
 | [roadmap.md](roadmap.md) | D0–M4 阶段、交付物、验收标准 |
 | [progress.md](progress.md) | 当前进展、阶段状态、变更日志、下一步 |
 | [ceo-harness-setup.md](ceo-harness-setup.md) | MCP / CLI 接入 CEO harness 的配置与工具清单 |
+| [multi-node.md](multi-node.md) | M2 多电脑节点：注册、心跳、租约、远程派工和产物回传 |
 
 相关入口：[项目 README](../README.md) · [CEO skill](../ceo-skill/SKILL.md)
 
@@ -40,8 +41,12 @@ Node A / Node B（各台电脑上的 Position）
   - Claude Code 2.1.304、pi 1.2.0、opencode 1.18.35 全部实机验证。
   - 三个 harness 的连通性、session 连续、代码修改与测试均通过。
   - worktree、session resume/回退、测试证据、审批闸门、工具白名单已实现。
-- 验收证据：`pnpm test` 18 passed、`pnpm demo:harnesses`、`pnpm demo:sessions`、`pnpm demo:code`、`pnpm demo:opencode`。
-- 下一步：M2 多电脑节点。
+- M2 多电脑节点：✅ 已完成。
+  - Node Agent 注册、心跳、claim、events、complete、租约续期。
+  - 双节点远程派工、产物回传、租约过期重排、drain/revoke。
+  - `pnpm demo:multi-node` 可本机模拟两台电脑。
+- 验收证据：`pnpm test` 21 passed、`pnpm demo:harnesses`、`pnpm demo:sessions`、`pnpm demo:code`、`pnpm demo:opencode`、`pnpm demo:multi-node`。
+- 下一步：M3 IM/语音入口。
 
 ## 更新规则
 

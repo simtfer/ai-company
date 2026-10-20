@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS nodes (
   os TEXT NOT NULL,
   status TEXT NOT NULL,
   capabilities_json TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'local',
+  workspace_root TEXT,
+  token_hash TEXT,
+  drain INTEGER NOT NULL DEFAULT 0,
+  revoked_at TEXT,
+  registered_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS positions (
@@ -85,6 +91,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   inputs_json TEXT NOT NULL,
   budget_json TEXT NOT NULL,
   deadline TEXT,
+  lease_owner TEXT,
+  lease_expires_at TEXT,
+  lease_token TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -102,6 +111,8 @@ CREATE TABLE IF NOT EXISTS runs (
   status TEXT NOT NULL,
   session_ref TEXT,
   context_pack_id TEXT,
+  node_id TEXT,
+  lease_token TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   cost_json TEXT NOT NULL
@@ -182,6 +193,17 @@ CREATE TABLE IF NOT EXISTS artifacts (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS enrollment_tokens (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  name TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  node_id TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_thread ON tasks(thread_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
 CREATE INDEX IF NOT EXISTS idx_reports_task ON reports(task_id);
@@ -225,6 +247,26 @@ export class Store {
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec(SCHEMA_SQL);
+    this.ensureColumn("nodes", "kind", "TEXT NOT NULL DEFAULT 'local'");
+    this.ensureColumn("nodes", "workspace_root", "TEXT");
+    this.ensureColumn("nodes", "token_hash", "TEXT");
+    this.ensureColumn("nodes", "drain", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("nodes", "revoked_at", "TEXT");
+    this.ensureColumn("nodes", "registered_at", "TEXT");
+    this.ensureColumn("tasks", "lease_owner", "TEXT");
+    this.ensureColumn("tasks", "lease_expires_at", "TEXT");
+    this.ensureColumn("tasks", "lease_token", "TEXT");
+    this.ensureColumn("runs", "node_id", "TEXT");
+    this.ensureColumn("runs", "lease_token", "TEXT");
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((item) => item.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   close(): void {
@@ -290,6 +332,11 @@ export class Store {
       status: asString(row.status),
       capabilities: decodeJson(row.capabilities_json as string, {}),
       last_seen_at: asString(row.last_seen_at),
+      kind: (row.kind as "local" | "remote") ?? "local",
+      workspace_root: (row.workspace_root as string | null) ?? null,
+      drain: Number(row.drain ?? 0) === 1,
+      revoked_at: (row.revoked_at as string | null) ?? null,
+      registered_at: (row.registered_at as string | null) ?? null,
     };
   }
 
@@ -297,8 +344,9 @@ export class Store {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO nodes
-         (id, company_id, name, os, status, capabilities_json, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, company_id, name, os, status, capabilities_json, last_seen_at,
+          kind, workspace_root, token_hash, drain, revoked_at, registered_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         node.id,
@@ -308,6 +356,34 @@ export class Store {
         node.status,
         encodeJson(node.capabilities),
         node.last_seen_at,
+        node.kind,
+        node.workspace_root,
+        null,
+        node.drain ? 1 : 0,
+        node.revoked_at,
+        node.registered_at,
+      );
+  }
+
+  insertRemoteNode(node: Node, tokenHash: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO nodes
+         (id, company_id, name, os, status, capabilities_json, last_seen_at,
+          kind, workspace_root, token_hash, drain, revoked_at, registered_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'remote', ?, ?, 0, NULL, ?)`,
+      )
+      .run(
+        node.id,
+        node.company_id,
+        node.name,
+        node.os,
+        node.status,
+        encodeJson(node.capabilities),
+        node.last_seen_at,
+        node.workspace_root,
+        tokenHash,
+        node.registered_at,
       );
   }
 
@@ -335,7 +411,131 @@ export class Store {
       status: asString(row.status),
       capabilities: decodeJson(row.capabilities_json as string, {}),
       last_seen_at: asString(row.last_seen_at),
+      kind: (row.kind as "local" | "remote") ?? "local",
+      workspace_root: (row.workspace_root as string | null) ?? null,
+      drain: Number(row.drain ?? 0) === 1,
+      revoked_at: (row.revoked_at as string | null) ?? null,
+      registered_at: (row.registered_at as string | null) ?? null,
     }));
+  }
+
+  getNodeByName(name: string): Node | null {
+    const row = this.db
+      .prepare("SELECT * FROM nodes WHERE name = ?")
+      .get(name) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: asString(row.id),
+      company_id: asString(row.company_id),
+      name: asString(row.name),
+      os: asString(row.os),
+      status: asString(row.status),
+      capabilities: decodeJson(row.capabilities_json as string, {}),
+      last_seen_at: asString(row.last_seen_at),
+      kind: (row.kind as "local" | "remote") ?? "local",
+      workspace_root: (row.workspace_root as string | null) ?? null,
+      drain: Number(row.drain ?? 0) === 1,
+      revoked_at: (row.revoked_at as string | null) ?? null,
+      registered_at: (row.registered_at as string | null) ?? null,
+    };
+  }
+
+  getNodeByTokenHash(tokenHash: string): Node | null {
+    const row = this.db
+      .prepare("SELECT * FROM nodes WHERE token_hash = ?")
+      .get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: asString(row.id),
+      company_id: asString(row.company_id),
+      name: asString(row.name),
+      os: asString(row.os),
+      status: asString(row.status),
+      capabilities: decodeJson(row.capabilities_json as string, {}),
+      last_seen_at: asString(row.last_seen_at),
+      kind: (row.kind as "local" | "remote") ?? "local",
+      workspace_root: (row.workspace_root as string | null) ?? null,
+      drain: Number(row.drain ?? 0) === 1,
+      revoked_at: (row.revoked_at as string | null) ?? null,
+      registered_at: (row.registered_at as string | null) ?? null,
+    };
+  }
+
+  updateNodeHeartbeat(
+    id: string,
+    capabilities?: Record<string, unknown>,
+  ): void {
+    if (capabilities) {
+      this.db
+        .prepare(
+          "UPDATE nodes SET last_seen_at = ?, status = 'online', capabilities_json = ? WHERE id = ?",
+        )
+        .run(nowIso(), encodeJson(capabilities), id);
+    } else {
+      this.db
+        .prepare("UPDATE nodes SET last_seen_at = ?, status = 'online' WHERE id = ?")
+        .run(nowIso(), id);
+    }
+  }
+
+  setNodeDrain(id: string, drain: boolean): void {
+    this.db
+      .prepare("UPDATE nodes SET drain = ? WHERE id = ?")
+      .run(drain ? 1 : 0, id);
+  }
+
+  revokeNode(id: string): void {
+    this.db
+      .prepare(
+        "UPDATE nodes SET status = 'revoked', revoked_at = ?, token_hash = NULL WHERE id = ?",
+      )
+      .run(nowIso(), id);
+  }
+
+  insertEnrollmentToken(input: {
+    id: string;
+    company_id: string;
+    token_hash: string;
+    name: string | null;
+    created_at: string;
+    expires_at: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO enrollment_tokens
+         (id, company_id, token_hash, name, created_at, expires_at, used_at, node_id)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+      )
+      .run(
+        input.id,
+        input.company_id,
+        input.token_hash,
+        input.name,
+        input.created_at,
+        input.expires_at,
+      );
+  }
+
+  consumeEnrollmentToken(
+    tokenHash: string,
+    nodeId: string,
+  ): { id: string; name: string | null } | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM enrollment_tokens
+         WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
+      )
+      .get(tokenHash, nowIso()) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    this.db
+      .prepare(
+        "UPDATE enrollment_tokens SET used_at = ?, node_id = ? WHERE id = ?",
+      )
+      .run(nowIso(), nodeId, asString(row.id));
+    return {
+      id: asString(row.id),
+      name: (row.name as string | null) ?? null,
+    };
   }
 
   // ---------- positions ----------
@@ -440,8 +640,9 @@ export class Store {
         `INSERT INTO tasks
          (id, company_id, thread_id, parent_task_id, task_key, title, objective,
           assignee, status, priority, acceptance_json, constraints_json, inputs_json,
-          budget_json, deadline, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          budget_json, deadline, lease_owner, lease_expires_at, lease_token,
+          created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -459,6 +660,9 @@ export class Store {
         encodeJson(task.inputs),
         encodeJson(task.budget),
         task.deadline,
+        task.lease_owner,
+        task.lease_expires_at,
+        task.lease_token,
         task.created_at,
         task.updated_at,
       );
@@ -514,6 +718,105 @@ export class Store {
       .run(encodeJson(constraints), nowIso(), id);
   }
 
+  updateTaskLease(
+    id: string,
+    owner: string,
+    token: string,
+    expiresAt: string,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(owner, token, expiresAt, nowIso(), id);
+  }
+
+  renewTaskLease(
+    taskId: string,
+    leaseToken: string,
+    expiresAt: string,
+  ): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE tasks SET lease_expires_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'running' AND lease_token = ?`,
+      )
+      .run(expiresAt, nowIso(), taskId, leaseToken);
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  clearTaskLease(id: string): void {
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(nowIso(), id);
+  }
+
+  listTasksAssignedToNode(nodeId: string): Task[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.* FROM tasks t
+         JOIN positions p ON p.name = t.assignee
+         WHERE p.node_id = ? AND t.status = 'assigned'
+           AND EXISTS (
+             SELECT 1 FROM runs r
+             WHERE r.task_id = t.id AND r.node_id = ? AND r.status = 'dispatched'
+           )
+         ORDER BY t.priority DESC, t.created_at ASC`,
+      )
+      .all(nodeId, nodeId) as Record<string, unknown>[];
+    return rows.map((row) => this.taskFromRow(row));
+  }
+
+  claimTaskForNode(
+    taskId: string,
+    nodeId: string,
+    leaseToken: string,
+    expiresAt: string,
+  ): Task | null {
+    const result = this.db
+      .prepare(
+        `UPDATE tasks
+         SET status = 'running', lease_owner = ?, lease_token = ?,
+             lease_expires_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'assigned'
+           AND (lease_expires_at IS NULL OR lease_expires_at < ?)
+           AND assignee IN (SELECT name FROM positions WHERE node_id = ?)
+           AND EXISTS (
+             SELECT 1 FROM runs r
+             WHERE r.task_id = tasks.id AND r.node_id = ? AND r.status = 'dispatched'
+           )`,
+      )
+      .run(
+        leaseToken,
+        leaseToken,
+        expiresAt,
+        nowIso(),
+        taskId,
+        nowIso(),
+        nodeId,
+        nodeId,
+      );
+    if (Number(result.changes ?? 0) === 0) return null;
+    return this.getTask(taskId);
+  }
+
+  listExpiredLeases(now = nowIso()): Task[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE status = 'running' AND lease_expires_at IS NOT NULL
+           AND lease_expires_at < ?`,
+      )
+      .all(now) as Record<string, unknown>[];
+    return rows.map((row) => this.taskFromRow(row));
+  }
+
   addTaskEdge(taskId: string, dependsOn: string): void {
     this.db
       .prepare("INSERT OR IGNORE INTO task_edges (task_id, depends_on) VALUES (?, ?)")
@@ -545,8 +848,9 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO runs
-         (id, task_id, position_id, status, session_ref, context_pack_id, started_at, ended_at, cost_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, task_id, position_id, status, session_ref, context_pack_id,
+          node_id, lease_token, started_at, ended_at, cost_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -555,6 +859,8 @@ export class Store {
         run.status,
         run.session_ref,
         run.context_pack_id,
+        run.node_id,
+        run.lease_token,
         run.started_at,
         run.ended_at,
         encodeJson(run.cost),
@@ -564,13 +870,25 @@ export class Store {
 
   updateRun(
     id: string,
-    patch: Partial<Pick<Run, "status" | "ended_at" | "cost" | "session_ref" | "context_pack_id">>,
+    patch: Partial<
+      Pick<
+        Run,
+        | "status"
+        | "ended_at"
+        | "cost"
+        | "session_ref"
+        | "context_pack_id"
+        | "node_id"
+        | "lease_token"
+      >
+    >,
   ): void {
     const current = this.getRun(id);
     if (!current) throw new Error(`Run not found: ${id}`);
     this.db
       .prepare(
-        `UPDATE runs SET status = ?, ended_at = ?, cost_json = ?, session_ref = ?, context_pack_id = ? WHERE id = ?`,
+        `UPDATE runs SET status = ?, ended_at = ?, cost_json = ?, session_ref = ?,
+         context_pack_id = ?, node_id = ?, lease_token = ? WHERE id = ?`,
       )
       .run(
         patch.status ?? current.status,
@@ -578,6 +896,10 @@ export class Store {
         encodeJson(patch.cost ?? current.cost),
         patch.session_ref ?? current.session_ref,
         patch.context_pack_id ?? current.context_pack_id,
+        patch.node_id ?? current.node_id,
+        patch.lease_token === null
+          ? null
+          : (patch.lease_token ?? current.lease_token),
         id,
       );
   }
@@ -806,6 +1128,13 @@ export class Store {
       .run(id, taskId, runId, encodeJson(pack), nowIso());
   }
 
+  getContextPack(id: string): unknown | null {
+    const row = this.db
+      .prepare("SELECT pack_json FROM context_packs WHERE id = ?")
+      .get(id) as { pack_json?: string } | undefined;
+    return row?.pack_json ? decodeJson(row.pack_json, null) : null;
+  }
+
   insertArtifact(artifact: ArtifactRecord): void {
     this.db
       .prepare(
@@ -893,6 +1222,9 @@ export class Store {
       inputs: decodeJson<unknown[]>(row.inputs_json as string, []),
       budget: decodeJson<Budget>(row.budget_json as string, {}),
       deadline: (row.deadline as string | null) ?? null,
+      lease_owner: (row.lease_owner as string | null) ?? null,
+      lease_expires_at: (row.lease_expires_at as string | null) ?? null,
+      lease_token: (row.lease_token as string | null) ?? null,
       created_at: asString(row.created_at),
       updated_at: asString(row.updated_at),
     };
@@ -906,6 +1238,8 @@ export class Store {
       status: asString(row.status),
       session_ref: (row.session_ref as string | null) ?? null,
       context_pack_id: (row.context_pack_id as string | null) ?? null,
+      node_id: (row.node_id as string | null) ?? null,
+      lease_token: (row.lease_token as string | null) ?? null,
       started_at: asString(row.started_at),
       ended_at: (row.ended_at as string | null) ?? null,
       cost: decodeJson(row.cost_json as string, {}),

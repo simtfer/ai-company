@@ -267,6 +267,7 @@ export function buildMcpServer(service: CompanyService): McpServer {
         harness_kind: z.string().optional(),
         model: z.string().optional(),
         workspace: z.string().optional(),
+        node_id: z.string().optional(),
       },
     },
     async (args) =>
@@ -313,6 +314,38 @@ export function buildMcpServer(service: CompanyService): McpServer {
       inputSchema: {},
     },
     async () => guarded(() => service.probeAdapters()),
+  );
+
+  server.registerTool(
+    "company_node_enroll",
+    {
+      description:
+        "Create a one-time enrollment token for a new computer. Give the token to `aic node join` on that computer.",
+      inputSchema: {
+        name: z.string().optional(),
+      },
+    },
+    async (args) => guarded(() => service.createEnrollmentToken(args.name)),
+  );
+
+  server.registerTool(
+    "company_node_drain",
+    {
+      description:
+        "Stop a node from accepting new tasks while leaving existing state intact.",
+      inputSchema: { node: z.string().min(1) },
+    },
+    async (args) => guarded(() => service.setNodeDrain(args.node, true)),
+  );
+
+  server.registerTool(
+    "company_node_revoke",
+    {
+      description:
+        "Revoke a node token and stop it from claiming tasks. Its positions remain for reassignment.",
+      inputSchema: { node: z.string().min(1) },
+    },
+    async (args) => guarded(() => service.revokeNode(args.node)),
   );
 
   server.registerTool(

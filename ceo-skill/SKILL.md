@@ -59,7 +59,16 @@ C. 先保留占位符
 - 需要人类批准时，设置 `constraints.requires_approval: true`；任务会先进入 `waiting_approval`。
 - 不要把一个真实任务同时派给多个会写文件的 Position；用依赖关系和 `base_ref` 串行化。
 
-## M1 限制
+## 多电脑（M2）
+
+- 先 `company_node_enroll` 生成一次性令牌，让目标电脑运行 `pnpm cli node:join`。
+- 再 `company_position_hire` 指定 `node_id`；`workspace` 用相对路径，节点会相对自己的 workspace root 解析。
+- `company_run_ready` 会自动等待远程节点领取并完成；报告里会包含远端 session、测试和 diff 产物路径。
+- 节点长时间无心跳或租约过期，任务会回到 `assigned`；不要让 CEO 反复重建任务。
+- `company_node_drain` 用于维护前排空；`company_node_revoke` 用于永久撤销。
+- 跨公网必须用 Tailscale/WireGuard；M2 的 HTTP 没有内建 TLS。
+
+## 当前限制
 
 - claude-code、pi、opencode 均已实机验证；三个 harness 的 session 连续和代码修改均已通过。
 - 当前审批是任务执行前闸门 + 工具白名单；harness 工具执行过程中的实时权限桥还未实现。

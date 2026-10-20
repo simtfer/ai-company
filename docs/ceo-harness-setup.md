@@ -97,7 +97,10 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_position_hire` | 招聘职位 |
 | `company_position_pause` | 暂停职位 |
 | `company_position_fire` | 解雇职位 |
-| `company_node_list` | 节点/办公室列表 |
+| `company_node_list` | 节点/办公室列表、在线状态、职位、活动任务 |
+| `company_node_enroll` | 创建一次性节点注册令牌 |
+| `company_node_drain` | 排空节点，停止接收新任务 |
+| `company_node_revoke` | 撤销节点 token |
 | `company_adapters` | 探测 fake / claude-code / pi / opencode 适配器能力 |
 | `company_demo` | M0 Fake 端到端演示 |
 
@@ -110,6 +113,14 @@ M1 真实执行说明：
 - `constraints.allowed_tools` / `constraints.denied_tools` 会映射到 Claude 的 `--allowedTools` / `--disallowedTools` 和 pi 的 `--tools`。
 - `constraints.base_ref` 可以让 QA 任务从 dev 分支创建 worktree。
 - MCP server 已注册所有发现的真实 harness；真实任务会产生模型费用。
+
+M2 多节点说明：
+
+- `company_node_enroll` 生成一次性注册令牌；在另一台电脑运行 `pnpm cli node:join --server ... --token ... --workspace ...`。
+- `company_position_hire` 传入 `node_id` 即可在远程节点招聘；`workspace` 建议用相对路径，由节点在自己的 workspace root 下解析。
+- `company_run_ready` 会把远程任务放入租约队列；节点领取后执行，完成后回传报告和产物。
+- `company_node_drain` / `company_node_revoke` 用于排空和撤销节点。
+- 详见 [multi-node.md](multi-node.md)。
 
 ## 5. 安全边界
 

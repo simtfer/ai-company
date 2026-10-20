@@ -99,6 +99,7 @@ export const HirePositionInputSchema = z.object({
   harness_kind: z.string().min(1).default("fake"),
   model: z.string().optional(),
   workspace: z.string().optional(),
+  node_id: z.string().optional(),
 });
 export type HirePositionInput = z.infer<typeof HirePositionInputSchema>;
 
@@ -142,6 +143,11 @@ export interface Node {
   status: string;
   capabilities: Record<string, unknown>;
   last_seen_at: string;
+  kind: "local" | "remote";
+  workspace_root: string | null;
+  drain: boolean;
+  revoked_at: string | null;
+  registered_at: string | null;
 }
 
 export interface Position {
@@ -186,6 +192,9 @@ export interface Task {
   inputs: unknown[];
   budget: Budget;
   deadline: string | null;
+  lease_owner: string | null;
+  lease_expires_at: string | null;
+  lease_token: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +206,8 @@ export interface Run {
   status: string;
   session_ref: string | null;
   context_pack_id: string | null;
+  node_id: string | null;
+  lease_token: string | null;
   started_at: string;
   ended_at: string | null;
   cost: Record<string, unknown>;

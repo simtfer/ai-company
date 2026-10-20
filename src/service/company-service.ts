@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -15,6 +15,7 @@ import {
   type Decision,
   type DecisionRequestInput,
   type HirePositionInput,
+  type Node,
   type Position,
   type Report,
   type ReportStatus,
@@ -39,6 +40,12 @@ import {
   type PreparedWorkspace,
   type WorkspaceResult,
 } from "../workspace/git-workspace";
+import type {
+  NodeCompletion,
+  NodeEventBatch,
+  NodeRegistrationRequest,
+  NodeTaskPayload,
+} from "../node/protocol";
 import { Store, newId, nowIso } from "../store/store";
 
 const DEFAULT_DB_PATH = join(process.cwd(), ".aic", "company.db");
@@ -78,6 +85,7 @@ export interface CompanyServiceOptions {
   seed?: boolean;
   adapters?: HarnessAdapter[];
   workspaceManager?: GitWorkspaceManager;
+  remoteWaitMs?: number;
 }
 
 export interface PlanResult {
@@ -114,12 +122,14 @@ export class CompanyService {
   readonly fake: FakeHarness;
   readonly workspaceManager: GitWorkspaceManager;
   private readonly adapters = new Map<string, HarnessAdapter>();
+  private readonly remoteWaitMs: number;
 
   constructor(options: CompanyServiceOptions = {}) {
     this.store = new Store(options.dbPath ?? DEFAULT_DB_PATH);
     this.fake = new FakeHarness(options.fakeDelayMs ?? 5);
     this.workspaceManager =
       options.workspaceManager ?? new GitWorkspaceManager();
+    this.remoteWaitMs = options.remoteWaitMs ?? 10 * 60_000;
     this.registerAdapter(this.fake);
     for (const adapter of options.adapters ?? []) {
       this.registerAdapter(adapter);
@@ -186,6 +196,11 @@ export class CompanyService {
         status: "online",
         capabilities,
         last_seen_at: nowIso(),
+        kind: "local",
+        workspace_root: process.cwd(),
+        drain: false,
+        revoked_at: null,
+        registered_at: nowIso(),
       });
     } else {
       this.store.updateNodeCapabilities(node.id, capabilities);
@@ -383,6 +398,9 @@ export class CompanyService {
           inputs: [],
           budget: inputTask.budget ?? {},
           deadline: inputTask.deadline ?? null,
+          lease_owner: null,
+          lease_expires_at: null,
+          lease_token: null,
           created_at: now,
           updated_at: now,
         };
@@ -520,6 +538,9 @@ export class CompanyService {
     if (position.status === "busy") {
       throw new Error(`Position ${position.name} is busy`);
     }
+    if (position.node_id !== LOCAL_NODE_ID) {
+      return this.executeRemoteTask(task, position, instruction);
+    }
     if (task.status === "queued") {
       this.store.updateTaskStatus(task.id, "assigned");
       task = this.requireTask(task.id);
@@ -547,6 +568,8 @@ export class CompanyService {
       status: "running",
       session_ref: null,
       context_pack_id: contextPackId,
+      node_id: LOCAL_NODE_ID,
+      lease_token: null,
       started_at: nowIso(),
       ended_at: null,
       cost: {},
@@ -756,6 +779,105 @@ export class CompanyService {
     };
   }
 
+  private async executeRemoteTask(
+    task: Task,
+    position: Position,
+    instruction?: string,
+  ): Promise<ExecutionResult> {
+    const node = this.store.getNode(position.node_id);
+    if (!node) throw new Error(`Node not found: ${position.node_id}`);
+    if (node.revoked_at) throw new Error(`Node ${node.name} is revoked`);
+    if (node.drain) throw new Error(`Node ${node.name} is draining`);
+    if (!this.nodeIsOnline(node)) {
+      throw new Error(
+        `Node ${node.name} is offline (last seen ${node.last_seen_at})`,
+      );
+    }
+
+    this.store.updateTaskStatus(task.id, "assigned");
+    task = this.requireTask(task.id);
+    const workspace: PreparedWorkspace = {
+      cwd: position.workspace,
+      repo: position.workspace,
+      branch: `task/${task.id}`,
+      base_ref:
+        typeof task.constraints.base_ref === "string"
+          ? task.constraints.base_ref
+          : "",
+      is_git: position.harness_kind !== "fake",
+    };
+    const { pack, contextPackId } = this.contextPack(
+      task,
+      position,
+      workspace,
+      instruction,
+    );
+    const runId = newId("r");
+    this.store.createRun({
+      id: runId,
+      task_id: task.id,
+      position_id: position.id,
+      status: "dispatched",
+      session_ref: null,
+      context_pack_id: contextPackId,
+      node_id: node.id,
+      lease_token: null,
+      started_at: nowIso(),
+      ended_at: null,
+      cost: {},
+    });
+    this.store.updatePositionStatus(position.id, "busy");
+    this.recordRunEvent(runId, task.id, "remote.dispatched", {
+      node_id: node.id,
+      node_name: node.name,
+      position: position.name,
+      context_pack_id: contextPackId,
+    });
+
+    const deadline = Date.now() + this.remoteWaitMs;
+    let current = this.requireTask(task.id);
+    while (Date.now() < deadline) {
+      this.releaseExpiredLeases();
+      current = this.requireTask(task.id);
+      if (isTerminal(current.status)) break;
+      await sleep(100);
+    }
+
+    if (!isTerminal(current.status)) {
+      this.store.clearTaskLease(task.id);
+      this.store.updateTaskStatus(task.id, "assigned");
+      this.store.updatePositionStatus(position.id, "idle");
+      this.store.updateRun(runId, {
+        status: "timed_out",
+        ended_at: nowIso(),
+      });
+      this.recordRunEvent(runId, task.id, "remote.timeout", {
+        node_id: node.id,
+        wait_ms: this.remoteWaitMs,
+      });
+      throw new Error(
+        `Remote task ${task.id} timed out waiting for node ${node.name}`,
+      );
+    }
+
+    const report = this.store.getLatestReportForTask(task.id)?.report;
+    if (!report) {
+      this.store.updatePositionStatus(position.id, "idle");
+      throw new Error(`Remote task ${task.id} ended without a report`);
+    }
+    this.store.updatePositionStatus(position.id, "idle");
+    this.store.updateRun(runId, {
+      status: report.status === "failed" ? "failed" : "done",
+      ended_at: nowIso(),
+    });
+    return {
+      task: this.requireTask(task.id),
+      position: this.requirePosition(position.id),
+      report,
+      run_id: runId,
+    };
+  }
+
   async continueTask(taskId: string, instruction: string): Promise<ExecutionResult> {
     const task = this.requireTask(taskId);
     if (task.status === "cancelled") {
@@ -904,14 +1026,21 @@ export class CompanyService {
     if (this.store.getPositionByName(parsed.name)) {
       throw new Error(`Position already exists: ${parsed.name}`);
     }
+    const nodeId = parsed.node_id ?? LOCAL_NODE_ID;
+    const node = this.store.getNode(nodeId);
+    if (!node) throw new Error(`Node not found: ${nodeId}`);
     const workspace =
       parsed.workspace ??
-      join(process.cwd(), ".aic", "workspaces", parsed.name);
-    mkdirSync(workspace, { recursive: true });
+      (node.kind === "remote"
+        ? join("workspace", parsed.name)
+        : join(process.cwd(), ".aic", "workspaces", parsed.name));
+    if (node.kind !== "remote") {
+      mkdirSync(workspace, { recursive: true });
+    }
     const position: Position = {
       id: newId("p"),
       company_id: MAIN_COMPANY_ID,
-      node_id: LOCAL_NODE_ID,
+      node_id: nodeId,
       name: parsed.name,
       role: parsed.role,
       harness_kind: parsed.harness_kind,
@@ -948,13 +1077,425 @@ export class CompanyService {
   }
 
   nodeList(): Array<Record<string, unknown>> {
-    return this.store.listNodes().map((node) => ({
-      ...node,
-      positions: this.store
+    const tasks = this.store.listTasks();
+    return this.store.listNodes().map((node) => {
+      const positions = this.store
         .listPositions()
-        .filter((position) => position.node_id === node.id)
-        .map((position) => position.name),
-    }));
+        .filter((position) => position.node_id === node.id);
+      const names = new Set(positions.map((position) => position.name));
+      return {
+        ...node,
+        online: this.nodeIsOnline(node),
+        positions: positions.map((position) => ({
+          name: position.name,
+          role: position.role,
+          harness_kind: position.harness_kind,
+          status: position.status,
+        })),
+        active_tasks: tasks
+          .filter(
+            (task) =>
+              task.assignee &&
+              names.has(task.assignee) &&
+              ["assigned", "running", "waiting_input", "waiting_approval"].includes(
+                task.status,
+              ),
+          )
+          .map((task) => ({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            assignee: task.assignee,
+            lease_expires_at: task.lease_expires_at,
+          })),
+      };
+    });
+  }
+
+  // ---------- multi-node ----------
+
+  createEnrollmentToken(name?: string): { token: string; expires_at: string } {
+    const token = `aic_enroll_${randomBytes(24).toString("hex")}`;
+    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    this.store.insertEnrollmentToken({
+      id: newId("enr"),
+      company_id: MAIN_COMPANY_ID,
+      token_hash: this.hashToken(token),
+      name: name ?? null,
+      created_at: nowIso(),
+      expires_at: expiresAt,
+    });
+    return { token, expires_at: expiresAt };
+  }
+
+  registerNode(input: NodeRegistrationRequest): {
+    node_id: string;
+    token: string;
+    name: string;
+    server_time: string;
+  } {
+    if (!input.name?.trim()) throw new Error("Node name is required");
+    if (!input.workspace_root?.trim()) {
+      throw new Error("Node workspace_root is required");
+    }
+    if (this.store.getNodeByName(input.name)) {
+      throw new Error(`Node name already exists: ${input.name}`);
+    }
+    const nodeId = newId("n");
+    const enrollment = this.store.consumeEnrollmentToken(
+      this.hashToken(input.token),
+      nodeId,
+    );
+    if (!enrollment) {
+      throw new Error("Invalid, expired or already-used enrollment token");
+    }
+    const nodeToken = `aic_node_${randomBytes(32).toString("hex")}`;
+    const node: Node = {
+      id: nodeId,
+      company_id: MAIN_COMPANY_ID,
+      name: input.name,
+      os: input.os ?? "unknown",
+      status: "online",
+      capabilities: input.capabilities ?? {},
+      last_seen_at: nowIso(),
+      kind: "remote",
+      workspace_root: input.workspace_root,
+      drain: false,
+      revoked_at: null,
+      registered_at: nowIso(),
+    };
+    this.store.insertRemoteNode(node, this.hashToken(nodeToken));
+    return {
+      node_id: node.id,
+      token: nodeToken,
+      name: node.name,
+      server_time: nowIso(),
+    };
+  }
+
+  heartbeatNode(
+    token: string,
+    capabilities?: Record<string, unknown>,
+  ): { drain: boolean; revoked: boolean; server_time: string } {
+    const node = this.authenticateNode(token);
+    this.store.updateNodeHeartbeat(node.id, capabilities);
+    const fresh = this.requireNode(node.id);
+    return {
+      drain: fresh.drain,
+      revoked: Boolean(fresh.revoked_at),
+      server_time: nowIso(),
+    };
+  }
+
+  claimTaskForNode(
+    token: string,
+    leaseMs = 60_000,
+  ): { task: NodeTaskPayload | null } {
+    const node = this.authenticateNode(token);
+    if (node.drain || node.revoked_at) return { task: null };
+    this.releaseExpiredLeases();
+
+    for (const task of this.store.listTasksAssignedToNode(node.id)) {
+      if (!this.store.dependenciesDone(task.id)) continue;
+      const leaseToken = `lease_${randomBytes(18).toString("hex")}`;
+      const expiresAt = new Date(Date.now() + leaseMs).toISOString();
+      const claimed = this.store.claimTaskForNode(
+        task.id,
+        node.id,
+        leaseToken,
+        expiresAt,
+      );
+      if (!claimed) continue;
+      const position = this.requirePositionByName(claimed.assignee ?? "");
+      let run = this.store.getLatestRunForTask(claimed.id);
+      if (!run) {
+        throw new Error(`No dispatched run for task ${claimed.id}`);
+      }
+      this.store.updateRun(run.id, {
+        status: "running",
+        node_id: node.id,
+        lease_token: leaseToken,
+      });
+      const context = run.context_pack_id
+        ? (this.store.getContextPack(run.context_pack_id) as ContextPack | null)
+        : null;
+      if (!context) {
+        throw new Error(`Context pack missing for task ${claimed.id}`);
+      }
+      this.recordRunEvent(run.id, claimed.id, "remote.claimed", {
+        node_id: node.id,
+        lease_token: leaseToken,
+        expires_at: expiresAt,
+      });
+      return {
+        task: {
+          run_id: run.id,
+          task: claimed,
+          position,
+          context,
+          lease_token: leaseToken,
+          expires_at: expiresAt,
+        },
+      };
+    }
+    return { task: null };
+  }
+
+  renewNodeLease(
+    token: string,
+    runId: string,
+    leaseToken: string,
+    leaseMs = 60_000,
+  ): { expires_at: string; server_time: string } {
+    const node = this.authenticateNode(token);
+    const run = this.store.getRun(runId);
+    if (!run || run.node_id !== node.id) {
+      throw new Error("Run does not belong to this node");
+    }
+    const task = this.requireTask(run.task_id);
+    if (task.lease_token !== leaseToken) {
+      throw new Error("Lease token mismatch");
+    }
+    const expiresAt = new Date(Date.now() + leaseMs).toISOString();
+    if (!this.store.renewTaskLease(task.id, leaseToken, expiresAt)) {
+      throw new Error("Lease is no longer active");
+    }
+    this.store.updateNodeHeartbeat(node.id);
+    return { expires_at: expiresAt, server_time: nowIso() };
+  }
+
+  recordNodeEvents(token: string, batch: NodeEventBatch): { ok: true } {
+    const node = this.authenticateNode(token);
+    const run = this.store.getRun(batch.run_id);
+    if (!run || run.node_id !== node.id) {
+      throw new Error("Run does not belong to this node");
+    }
+    for (const event of batch.events) {
+      this.recordHarnessEvent(run.id, run.task_id, event);
+    }
+    return { ok: true };
+  }
+
+  completeNodeTask(token: string, completion: NodeCompletion): {
+    ok: true;
+    task_id: string;
+    status: Report["status"];
+  } {
+    const node = this.authenticateNode(token);
+    const run = this.store.getRun(completion.run_id);
+    if (!run || run.node_id !== node.id) {
+      throw new Error("Run does not belong to this node");
+    }
+    const task = this.requireTask(run.task_id);
+    if (
+      task.lease_token &&
+      completion.lease_token &&
+      task.lease_token !== completion.lease_token
+    ) {
+      throw new Error("Lease token mismatch");
+    }
+    const position = this.requirePosition(run.position_id);
+    const context = run.context_pack_id
+      ? (this.store.getContextPack(run.context_pack_id) as ContextPack | null)
+      : null;
+
+    const report = ReportSchema.parse(completion.report);
+    const evidence = [...report.evidence];
+    for (const artifact of completion.artifacts ?? []) {
+      const filename = `${completion.run_id}-${artifact.filename}`.replaceAll(
+        /[^a-zA-Z0-9._-]/g,
+        "-",
+      );
+      const artifactDir = join(process.cwd(), ".aic", "artifacts");
+      mkdirSync(artifactDir, { recursive: true });
+      const path = join(artifactDir, `remote-${filename}`);
+      writeFileSync(
+        path,
+        artifact.encoding === "base64"
+          ? Buffer.from(artifact.content, "base64")
+          : artifact.content,
+        artifact.encoding === "base64" ? undefined : "utf8",
+      );
+      this.store.insertArtifact({
+        id: newId("art"),
+        task_id: task.id,
+        run_id: run.id,
+        kind: artifact.kind,
+        uri: path,
+        sha256: null,
+        meta: { source: "remote", node_id: node.id },
+        created_at: nowIso(),
+      });
+      evidence.push({ kind: artifact.kind, artifact: path });
+    }
+    const finalReport = ReportSchema.parse({
+      ...report,
+      evidence,
+    });
+
+    this.store.insertReport({
+      id: newId("rep"),
+      task_id: task.id,
+      run_id: run.id,
+      status: finalReport.status,
+      summary: finalReport.summary,
+      report: finalReport,
+      created_at: nowIso(),
+    });
+    this.store.updateTaskStatus(
+      task.id,
+      this.reportToTaskStatus(finalReport.status),
+    );
+    this.store.updatePositionStatus(position.id, "idle");
+    this.store.updateRun(run.id, {
+      status: finalReport.status === "failed" ? "failed" : "done",
+      ended_at: nowIso(),
+      cost: {
+        tokens: completion.usage?.tokens ?? 0,
+        usd: completion.usage?.cost_usd ?? 0,
+      },
+      session_ref: completion.session_id ?? null,
+    });
+    this.store.clearTaskLease(task.id);
+
+    if (finalReport.status === "needs_decision" && finalReport.decision) {
+      this.store.insertDecision({
+        id: newId("d"),
+        company_id: MAIN_COMPANY_ID,
+        thread_id: task.thread_id,
+        task_id: task.id,
+        question: finalReport.decision.question,
+        options: finalReport.decision.options,
+        status: "open",
+        chosen: null,
+        rationale: null,
+        created_at: nowIso(),
+        resolved_at: null,
+      });
+    }
+
+    if (completion.session_id) {
+      const existing = this.store.getSessionRef(position.id);
+      const ctxWorkspace =
+        context && typeof context.workspace === "object" && context.workspace
+          ? (context.workspace as { path?: unknown }).path
+          : undefined;
+      this.store.upsertSessionRef({
+        id: existing?.id ?? newId("s"),
+        position_id: position.id,
+        harness_kind: position.harness_kind,
+        session_id: completion.session_id,
+        cwd:
+          typeof ctxWorkspace === "string"
+            ? ctxWorkspace
+            : position.workspace,
+        model: position.model,
+        harness_version: `m2:${position.harness_kind}`,
+        context_hash:
+          context?.context_hash ?? "remote",
+        last_used_at: nowIso(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        status: "active",
+      });
+    }
+
+    this.store.upsertMemory(position.id, "last_task", {
+      task_id: task.id,
+      title: task.title,
+      status: finalReport.status,
+      run_id: run.id,
+    });
+    this.store.upsertMemory(position.id, "last_handoff", finalReport.handoff);
+    const thread = this.store.getThread(task.thread_id);
+    if (thread) {
+      this.store.updateThreadSummary(
+        thread.id,
+        `${thread.title}：${finalReport.summary}`,
+      );
+    }
+    this.recordRunEvent(run.id, task.id, "remote.completed", {
+      node_id: node.id,
+      status: finalReport.status,
+      session_id: completion.session_id ?? null,
+    });
+
+    return {
+      ok: true,
+      task_id: task.id,
+      status: finalReport.status,
+    };
+  }
+
+  releaseExpiredLeases(): Task[] {
+    const expired = this.store.listExpiredLeases();
+    for (const task of expired) {
+      this.store.clearTaskLease(task.id);
+      this.store.updateTaskStatus(task.id, "assigned");
+      if (task.assignee) {
+        const position = this.store.getPositionByName(task.assignee);
+        if (position) {
+          this.store.updatePositionStatus(position.id, "idle");
+        }
+      }
+      const run = this.store.getLatestRunForTask(task.id);
+      if (run) {
+        this.store.updateRun(run.id, {
+          status: "dispatched",
+          ended_at: nowIso(),
+          lease_token: null,
+        });
+        this.recordRunEvent(run.id, task.id, "lease.expired", {
+          previous_owner: task.lease_owner,
+          previous_expires_at: task.lease_expires_at,
+        });
+      }
+    }
+    return expired;
+  }
+
+  setNodeDrain(identifier: string, drain: boolean): Node {
+    const node = this.nodeByIdentifier(identifier);
+    this.store.setNodeDrain(node.id, drain);
+    return this.requireNode(node.id);
+  }
+
+  revokeNode(identifier: string): Node {
+    const node = this.nodeByIdentifier(identifier);
+    this.store.setNodeDrain(node.id, true);
+    this.store.revokeNode(node.id);
+    return this.requireNode(node.id);
+  }
+
+  private authenticateNode(token: string): Node {
+    if (!token) throw new Error("Missing node token");
+    const node = this.store.getNodeByTokenHash(this.hashToken(token));
+    if (!node) throw new Error("Invalid node token");
+    if (node.revoked_at) throw new Error(`Node ${node.name} is revoked`);
+    return node;
+  }
+
+  private hashToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  private nodeByIdentifier(identifier: string): Node {
+    const byId = this.store.getNode(identifier);
+    if (byId) return byId;
+    const byName = this.store.getNodeByName(identifier);
+    if (byName) return byName;
+    throw new Error(`Node not found: ${identifier}`);
+  }
+
+  private requireNode(id: string): Node {
+    const node = this.store.getNode(id);
+    if (!node) throw new Error(`Node not found: ${id}`);
+    return node;
+  }
+
+  private nodeIsOnline(node: Node): boolean {
+    if (node.revoked_at) return false;
+    if (node.kind === "local") return true;
+    return Date.now() - Date.parse(node.last_seen_at) < 30_000;
   }
 
   // ---------- context / execution helpers ----------

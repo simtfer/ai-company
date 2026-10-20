@@ -2,7 +2,7 @@
 
 > 最后更新：2026-10-21
 >
-> 当前阶段：D0 已完成，M0 已完成，M1 已完成，M2 未开始
+> 当前阶段：D0 已完成，M0 已完成，M1 已完成，M2 已完成，M3 未开始
 > 入口：CEO harness（不做独立聊天软件）
 
 ## 当前状态
@@ -22,8 +22,11 @@
 | M1 worktree | ✅ 已完成 | 每任务独立 worktree，自动提交和 diff |
 | M1 Session Manager | ✅ 已完成 | 三个 harness 均已实测 resume |
 | M1 审批与工具白名单 | ✅ 已完成 | `requires_approval`、`allowed_tools`、`denied_tools` |
-| M2 多电脑 | ⬜ 未开始 | 下一步 |
-| M3 IM/语音 | ⬜ 未开始 | 依赖 M2 |
+| M2 Node Agent | ✅ 已完成 | 注册、心跳、claim、events、complete、续租 |
+| M2 远程派工 | ✅ 已完成 | 控制平面租约 + 节点 HTTP 拉取执行 |
+| M2 产物回传 | ✅ 已完成 | 测试文本 + diff 写入 `.aic/artifacts/remote-*` |
+| M2 节点管理 | ✅ 已完成 | enroll / list / drain / revoke |
+| M3 IM/语音 | ⬜ 未开始 | 下一步 |
 | M4 加固 | ⬜ 未开始 | 依赖 M3 |
 
 ## 阶段状态
@@ -33,7 +36,7 @@
 | D0 方案设计 | ✅ 已完成 | 2026-10-21 | `architecture.md` / `roadmap.md` / `progress.md` |
 | M0 Runtime + Fake Position | ✅ 已完成 | 2026-10-21 | `pnpm test` 10 passed；`pnpm demo`；MCP stdio 集成测试 |
 | M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
-| M2 多电脑节点 | ⬜ 未开始 | — | — |
+| M2 多电脑节点 | ✅ 已完成 | 2026-10-21 | 21 tests；`pnpm demo:multi-node`；两个 HTTP node agent |
 | M3 IM / 语音 | ⬜ 未开始 | — | — |
 | M4 质量与打包 | ⬜ 未开始 | — | — |
 
@@ -83,16 +86,33 @@
 - 测试：7 个测试文件、18 个测试通过，覆盖 adapter、worktree、session 回退、审批、测试失败、pi 解析。
 - M1 完成；下一步 M2 多电脑节点。
 
+### 2026-10-21 — M2
+
+- 扩展数据模型：nodes 增加 workspace root / token hash / drain / revoked；tasks 增加租约字段；runs 增加 node / lease。
+- 实现节点注册：一次性 enrollment token，30 分钟有效，单次使用；注册后发放 node token。
+- 实现 Node Agent：`src/node/agent.ts`，注册、心跳、claim、events、complete、租约续期。
+- 实现远程执行器：`src/node/executor.ts`，在节点本地使用 worktree/adapter/test/artifact。
+- 实现控制平面远程派工：`CompanyService.executeRemoteTask`，租约等待、超时、租约过期重排。
+- 实现产物回传：远程测试文本和 diff 写入 `.aic/artifacts/remote-*`。
+- 实现节点管理：`company_node_enroll`、`company_node_list`、`company_node_drain`、`company_node_revoke`。
+- 实现 CLI：`pnpm cli node:token`、`pnpm cli node:join`、`pnpm serve --host`。
+- 新增 `pnpm demo:multi-node`：本机启动两个 HTTP node agent，各执行一个远程任务。
+- 真实验证：`pnpm cli node:join` 注册并心跳成功；远程 opencode 节点执行 `REMOTE_REAL_OK` 成功（手动 smoke test）。
+- 测试：8 个测试文件、21 个测试通过，覆盖注册、双节点派工、产物、租约重排、drain/revoke、token 不可复用。
+- M2 完成；下一步 M3 IM/语音。
+
 ## 下一步
 
-1. 进入 M2：Node Agent、注册/心跳/租约、远程派工和产物回传。
-2. 在 M2 中补实时权限询问桥（当前是执行前闸门 + 工具白名单）。
+1. 进入 M3：CEO Ingress/Egress、IM 桥、语音 STT/TTS。
+2. 继续补实时权限询问桥（当前是执行前闸门 + 工具白名单）。
 3. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 
 ## 阻塞与风险
 
 - 当前无阻塞。
+- 风险：M2 使用 HTTP 拉取，没有内建 TLS；跨公网必须用 Tailscale/WireGuard 或反向代理。
+- 风险：远程 git 分支目前留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 - 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
-- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 内部工具执行中的实时权限询问桥尚未实现，后置到 M2/M4。
+- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 内部工具执行中的实时权限询问桥尚未实现。
 - 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 前只能在下一次对话汇报增量。

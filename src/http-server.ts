@@ -7,10 +7,17 @@ import {
 import { CompanyService } from "./service/company-service";
 import { createRealAdapters } from "./adapters";
 import { runDemo, DEMO_GOAL } from "./demo";
+import type {
+  NodeCompletion,
+  NodeEventBatch,
+  NodeRegistrationRequest,
+} from "./node/protocol";
 
 export interface HttpServerOptions {
   dbPath?: string;
   port?: number;
+  host?: string;
+  service?: CompanyService;
 }
 
 function sendJson(
@@ -51,16 +58,27 @@ function asString(value: unknown, field: string): string {
   return value;
 }
 
+function bearerToken(req: IncomingMessage): string {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    throw new Error("Missing node bearer token");
+  }
+  return header.slice("Bearer ".length).trim();
+}
+
 export async function startHttpServer(
   options: HttpServerOptions = {},
 ): Promise<Server> {
   const { adapters } = createRealAdapters();
-  const service = new CompanyService({
-    dbPath: options.dbPath,
-    fakeDelayMs: 0,
-    adapters,
-  });
+  const service =
+    options.service ??
+    new CompanyService({
+      dbPath: options.dbPath,
+      fakeDelayMs: 0,
+      adapters,
+    });
   const port = options.port ?? 4317;
+  const host = options.host ?? "127.0.0.1";
 
   const server = createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
@@ -98,6 +116,97 @@ export async function startHttpServer(
       }
       if (method === "GET" && path === "/api/adapters") {
         sendJson(res, 200, await service.probeAdapters());
+        return;
+      }
+
+      if (method === "POST" && path === "/api/node/register") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          201,
+          service.registerNode(body as unknown as NodeRegistrationRequest),
+        );
+        return;
+      }
+      if (method === "POST" && path === "/api/node/heartbeat") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          200,
+          service.heartbeatNode(
+            bearerToken(req),
+            typeof body.capabilities === "object" && body.capabilities
+              ? (body.capabilities as Record<string, unknown>)
+              : undefined,
+          ),
+        );
+        return;
+      }
+      if (method === "POST" && path === "/api/node/claim") {
+        const body = await readJson(req);
+        const leaseMs =
+          typeof body.lease_ms === "number" ? body.lease_ms : undefined;
+        sendJson(res, 200, service.claimTaskForNode(bearerToken(req), leaseMs));
+        return;
+      }
+      if (method === "POST" && path === "/api/node/renew") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          200,
+          service.renewNodeLease(
+            bearerToken(req),
+            asString(body.run_id, "run_id"),
+            asString(body.lease_token, "lease_token"),
+            typeof body.lease_ms === "number" ? body.lease_ms : undefined,
+          ),
+        );
+        return;
+      }
+      if (method === "POST" && path === "/api/node/events") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          200,
+          service.recordNodeEvents(
+            bearerToken(req),
+            body as unknown as NodeEventBatch,
+          ),
+        );
+        return;
+      }
+      if (method === "POST" && path === "/api/node/complete") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          200,
+          service.completeNodeTask(
+            bearerToken(req),
+            body as unknown as NodeCompletion,
+          ),
+        );
+        return;
+      }
+      if (method === "POST" && path === "/api/admin/enrollment-tokens") {
+        const body = await readJson(req);
+        sendJson(
+          res,
+          201,
+          service.createEnrollmentToken(
+            typeof body.name === "string" ? body.name : undefined,
+          ),
+        );
+        return;
+      }
+
+      const drainMatch = path.match(/^\/api\/nodes\/([^/]+)\/(drain|revoke)$/);
+      if (method === "POST" && drainMatch) {
+        const identifier = decodeURIComponent(drainMatch[1]);
+        const node =
+          drainMatch[2] === "drain"
+            ? service.setNodeDrain(identifier, true)
+            : service.revokeNode(identifier);
+        sendJson(res, 200, node);
         return;
       }
 
@@ -198,13 +307,30 @@ export async function startHttpServer(
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });
   });
 
-  server.once("close", () => service.close());
-  console.error(`[ai-company] HTTP API listening on http://127.0.0.1:${port}`);
+  const sweeper = setInterval(() => {
+    try {
+      service.releaseExpiredLeases();
+    } catch {
+      // Keep the server alive; the next tick retries.
+    }
+  }, 5_000);
+  sweeper.unref();
+
+  server.once("close", () => {
+    clearInterval(sweeper);
+    service.close();
+  });
+  const address = server.address();
+  const actualPort =
+    typeof address === "object" && address ? address.port : port;
+  console.error(
+    `[ai-company] HTTP API listening on http://${host}:${actualPort}`,
+  );
   return server;
 }

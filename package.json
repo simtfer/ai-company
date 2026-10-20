@@ -17,7 +17,10 @@
     "demo:harnesses": "tsx src/cli.ts demo:harnesses",
     "demo:sessions": "tsx src/cli.ts demo:sessions",
     "demo:code": "tsx src/cli.ts demo:code",
+    "demo:multi-node": "tsx src/cli.ts demo:multi-node",
     "probe": "tsx src/cli.ts probe",
+    "node:token": "tsx src/cli.ts node:token",
+    "node:join": "tsx src/cli.ts node:join",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

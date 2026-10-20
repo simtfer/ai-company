@@ -86,11 +86,11 @@
 | 对象 | 含义 | 关键字段 |
 |---|---|---|
 | Company | 一家公司 | 名称、员工手册、预算、政策 |
-| Node / Office | 一台电脑 | 操作系统、能力、在线状态、并发槽位 |
+| Node / Office | 一台电脑 | 操作系统、能力、在线状态、workspace root、drain/revoked |
 | Position | 一个 harness 实例 + 一个职位 | 角色、harness 类型、模型、工作区、权限、预算 |
 | Project | 项目/仓库 | git 地址、默认分支、约定 |
 | Thread | 一个目标/ initiative | 标题、摘要、状态、关联任务 |
-| Task | 一张任务单，组成 DAG | 目标、验收标准、依赖、指派人、状态 |
+| Task | 一张任务单，组成 DAG | 目标、验收标准、依赖、指派人、状态、租约 |
 | Run | 一次具体执行 | session 引用、耗时、成本、日志 |
 | Event | 审计事件 | 追加写、序号、类型、负载 |
 | Artifact | 产物 | 类型、URI、哈希、大小 |
@@ -501,22 +501,23 @@ repo cache
 每台电脑安装一个 Node Agent，作为系统服务运行：
 
 ```text
-node enroll --server wss://ceo.example.com --token <一次性令牌>
+pnpm cli node:join --server http://ceo.example.com:4317 --token <一次性令牌> \
+  --name laptop-b --workspace D:\aic-node
 ```
 
-流程：
+M2 实际传输是“节点主动外连 + HTTP 拉取/心跳”，不要求控制平面开放入站端口到节点：
 
-1. 节点生成密钥对，用一次性令牌注册，拿到 `node_id`。
-2. 节点主动建立出站 WSS，不需要公网入站端口。
-3. 每 10 秒心跳，上报 harness 列表、版本、并发槽位、资源占用。
-4. 控制平面下发任务租约，节点接受后在本地工作区执行。
-5. 事件按序号回传；断线重连后从上次序号续传。
-6. 租约过期，任务重新排队；工作区保留，避免重复劳动。
-7. 产物通过 git 分支或对象存储回传，不塞进消息通道。
+1. 控制平面创建一次性注册令牌（30 分钟、单次使用）。
+2. 节点用令牌注册，拿到自己的 node token；之后所有请求带 `Authorization: Bearer`。
+3. 节点每 2 秒心跳，上报 harness 列表和并发信息。
+4. 节点每 1 秒拉取任务；控制平面用任务租约（默认 60 秒）防止重复执行。
+5. 节点执行期间续租；完成后回传报告、session id、测试文本和 diff 产物。
+6. 心跳停止或租约过期，任务自动回到 `assigned`，等待重新领取。
+7. 产物写入控制平面 `.aic/artifacts/remote-*`；git 分支需要共享远端仓库时再推送。
 
-CEO 在聊天里通过 `company.node.*` 工具管理远程节点：招聘、派活、排空、升级、撤销令牌。
+CEO 通过 `company_node_*` 工具管理远程节点：招聘职位、派活、排空（drain）、撤销令牌（revoke）。
 
-网络建议：MVP 用 Tailscale/WireGuard 组网，控制平面只监听内网；不要一上来把控制平面暴露公网。
+网络建议：M2 用 Tailscale/WireGuard 组网，`pnpm serve --host 0.0.0.0` 只监听内网/Tailscale；M2 没有内建 TLS，不要直接暴露公网。后续可把 HTTP 拉取替换为 WSS，协议语义不变。
 
 ## 12. IM 与语音（后期）
 
@@ -560,14 +561,16 @@ src/
   domain/            # 领域模型、Zod schema、状态机
   store/             # SQLite + 仓储
   service/           # CompanyService、上下文包、任务执行
-  adapters/          # fake / opencode / claude-code / 进程与提示词
+  adapters/          # fake / opencode / claude-code / pi / 进程与提示词
   workspace/         # git worktree、提交、diff 产物
+  node/              # Node Agent、远程协议、远程执行器
   cli.ts             # aic 命令
   demo.ts            # Fake 端到端演示
   demo-opencode.ts   # opencode 真实闭环演示
+  demo-multi-node.ts # 双节点 HTTP 演示
   mcp-server.ts      # MCP stdio server
-  http-server.ts     # 本地 HTTP API
-tests/               # 状态机、服务、adapter、worktree、session、MCP
+  http-server.ts     # HTTP API + 节点端点
+tests/               # 状态机、服务、adapter、worktree、session、MCP、多节点
 ceo-skill/           # CEO 守则、工具说明
 docs/                # 架构、路线、进展
 ```

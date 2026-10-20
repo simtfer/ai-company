@@ -119,6 +119,69 @@ program
   });
 
 program
+  .command("demo:multi-node")
+  .description("start two HTTP node agents and dispatch remote tasks")
+  .action(async () => {
+    const { runMultiNodeDemo } = await import("./demo-multi-node");
+    print(await runMultiNodeDemo());
+  });
+
+program
+  .command("node:token")
+  .description("create a one-time node enrollment token")
+  .option("--name <name>", "optional label")
+  .action((options: { name?: string }) => {
+    const instance = service();
+    try {
+      print(instance.createEnrollmentToken(options.name));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("node:join")
+  .description("join this computer to the company as a remote node")
+  .requiredOption("--server <url>", "control plane URL, e.g. http://127.0.0.1:4317")
+  .requiredOption("--token <token>", "one-time enrollment token")
+  .option("--name <name>", "node name", "remote-node")
+  .requiredOption("--workspace <path>", "node workspace root")
+  .action(async (options: {
+    server: string;
+    token: string;
+    name: string;
+    workspace: string;
+  }) => {
+    const { NodeAgent } = await import("./node/agent");
+    const agent = new NodeAgent({
+      serverUrl: options.server,
+      enrollmentToken: options.token,
+      name: options.name,
+      workspaceRoot: options.workspace,
+      adapters: createRealAdapters().adapters,
+    });
+    const registration = await agent.register();
+    console.log(
+      JSON.stringify(
+        {
+          node_id: registration.node_id,
+          name: registration.name,
+          server: options.server,
+          workspace: options.workspace,
+        },
+        null,
+        2,
+      ),
+    );
+    await agent.start();
+    await new Promise<void>((resolve) => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+    });
+    await agent.stop();
+  });
+
+program
   .command("probe")
   .description("probe discovered real harness adapters")
   .action(async () => {
@@ -248,14 +311,16 @@ program
 
 program
   .command("serve")
-  .description("start the local HTTP runtime API")
+  .description("start the HTTP runtime API")
   .option("--port <port>", "port", "4317")
-  .action(async (options: { port: string }) => {
+  .option("--host <host>", "bind host", "127.0.0.1")
+  .action(async (options: { port: string; host: string }) => {
     const { startHttpServer } = await import("./http-server");
     const port = Number(options.port);
     await startHttpServer({
       dbPath: program.opts().db as string | undefined,
       port,
+      host: options.host,
     });
   });
 
