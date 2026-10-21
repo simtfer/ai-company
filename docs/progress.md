@@ -2,7 +2,7 @@
 
 > 最后更新：2026-10-21
 >
-> 当前阶段：D0–M2 已完成；M3 暂缓；M4 待开始
+> 当前阶段：D0–M2 已完成；M3 暂缓；M4 核心完成
 > 入口：CEO harness（不做独立聊天软件）
 
 ## 当前状态
@@ -27,7 +27,13 @@
 | M2 产物回传 | ✅ 已完成 | 测试文本 + diff 写入 `.aic/artifacts/remote-*` |
 | M2 节点管理 | ✅ 已完成 | enroll / list / drain / revoke |
 | M3 IM/语音 | ⏸ 暂缓 | 以后做，不阻塞 M4 |
-| M4 加固 | ⬜ 可开始 | 下一步，不依赖 M3 |
+| M4 预算硬停 | ✅ 已完成 | 公司/职位/任务 USD 预算 |
+| M4 重试与升级 | ✅ 已完成 | 自动重试 + 手动 retry |
+| M4 评审与合并队列 | ✅ 已完成 | 独立 review task + merge queue |
+| M4 指标与记忆 | ✅ 已完成 | metrics + memory search |
+| M4 备份与日志 | ✅ 已完成 | VACUUM INTO 备份、恢复、日志清理 |
+| M4 打包 | 🟡 部分完成 | `bin/aic.mjs` wrapper；单文件打包待做 |
+| M4 服务化 | 🟡 文档完成 | systemd/NSSM 示例；自动安装待做 |
 
 ## 阶段状态
 
@@ -38,7 +44,7 @@
 | M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
 | M2 多电脑节点 | ✅ 已完成 | 2026-10-21 | 21 tests；`pnpm demo:multi-node`；两个 HTTP node agent |
 | M3 IM / 语音 | ⏸ 暂缓 | — | 按用户决定以后做 |
-| M4 质量与打包 | ⬜ 可开始 | — | — |
+| M4 质量与打包 | 🟡 核心完成 | 2026-10-21 | 26 tests；预算/重试/评审/指标/备份；运维文档 |
 
 ## 变更日志
 
@@ -102,10 +108,22 @@
 - M2 完成。
 - 2026-10-21：按用户决定，M3 IM/语音暂缓，不作为 M4 前置；下一阶段为 M4 质量与打包加固。
 
+### 2026-10-21 — M4
+
+- 数据模型：任务增加 attempts/max_retries；运行增加 tokens/cost_usd；新增 merge_queue。
+- 预算：公司/职位/任务三级 USD 预算；派工前硬停，任务超预算转 blocked。
+- 重试：失败任务按 `max_retries` 自动重试，支持 `company_task_retry` 手动重试。
+- 评审与合并队列：`company_review_request` 创建独立 review task 和 merge queue；review 完成后进入 ready，可 approve/reject。
+- 指标：`company_metrics` 返回任务状态、运行、平均耗时、token/成本、重试、节点、merge queue 和预算。
+- 记忆：`company_memory_search` 搜索员工手册、Position Memory 和 thread 摘要。
+- 运维：`backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`、`bin/aic.mjs` 入口、`docs/operations.md`。
+- 测试：9 个测试文件、26 个测试通过，新增预算硬停、自动重试、评审/合并、指标/记忆、备份恢复。
+- M4 核心完成；单文件打包、服务自动安装、分钟级预算硬停、真实 git merge、实时权限桥仍待补。
+
 ## 下一步
 
-1. 进入 M4：质量、成本与打包加固。
-2. 优先补实时权限询问桥、预算/失败策略、日志与安装体验。
+1. 补 M4 剩余项：单文件打包、Windows 服务/Linux systemd 自动安装、分钟级预算、真实 git merge。
+2. 补 harness 工具执行中的实时权限询问桥。
 3. M3 IM/语音保持设计，等以后恢复。
 4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 
@@ -115,6 +133,6 @@
 - 风险：M2 使用 HTTP 拉取，没有内建 TLS；跨公网必须用 Tailscale/WireGuard 或反向代理。
 - 风险：远程 git 分支目前留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 - 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
-- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 内部工具执行中的实时权限询问桥尚未实现。
+- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 工具执行中的实时权限询问桥尚未实现。
 - 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 暂缓，因此目前仍只能在下一次对话用 `company_inbox` 汇报增量。

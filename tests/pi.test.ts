@@ -33,6 +33,8 @@ function input(): RunInput {
     inputs: [],
     budget: {},
     deadline: null,
+    attempts: 0,
+    max_retries: 0,
     lease_owner: null,
     lease_expires_at: null,
     lease_token: null,

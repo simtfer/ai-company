@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
 import { CompanyService } from "./service/company-service";
 import { createRealAdapters } from "./adapters";
@@ -84,6 +86,151 @@ program
     const instance = service();
     try {
       print(instance.threads());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("metrics")
+  .description("show task, run, cost, retry and merge metrics")
+  .action(() => {
+    const instance = service();
+    try {
+      print(instance.metrics());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("budget")
+  .description("show company and position budgets")
+  .action(() => {
+    const instance = service();
+    try {
+      print(instance.budgetStatus());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("memory")
+  .description("search company handbook, position memory and threads")
+  .argument("<query>")
+  .action((query: string) => {
+    const instance = service();
+    try {
+      print(instance.searchMemory(query));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("backup")
+  .description("write a consistent SQLite backup")
+  .requiredOption("--out <path>", "backup file path")
+  .action((options: { out: string }) => {
+    const instance = service();
+    try {
+      mkdirSync(dirname(options.out), { recursive: true });
+      instance.backupTo(options.out);
+      print({ backup: options.out });
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("restore")
+  .description("restore a SQLite backup into the configured database path")
+  .requiredOption("--from <path>", "backup file path")
+  .action((options: { from: string }) => {
+    if (!existsSync(options.from)) {
+      throw new Error(`Backup not found: ${options.from}`);
+    }
+    const target =
+      (program.opts().db as string | undefined) ??
+      process.env.AIC_DB_PATH ??
+      join(process.cwd(), ".aic", "company.db");
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(options.from, target);
+    print({ restored: options.from, target });
+  });
+
+program
+  .command("logs:prune")
+  .description("delete run logs older than N days")
+  .option("--days <days>", "retention days", "7")
+  .action((options: { days: string }) => {
+    const instance = service();
+    try {
+      print(instance.pruneLogs(Number(options.days)));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("review")
+  .description("request an independent review and enqueue the task for merge")
+  .requiredOption("--task <id>", "done task id")
+  .requiredOption("--reviewer <name>", "reviewer position")
+  .action((options: { task: string; reviewer: string }) => {
+    const instance = service();
+    try {
+      print(instance.requestReview(options.task, options.reviewer));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("merge:list")
+  .description("list merge queue entries")
+  .option("--status <status>", "pending_review | ready | merged | rejected")
+  .action((options: { status?: string }) => {
+    const instance = service();
+    try {
+      print(
+        instance.mergeQueue(
+          options.status as
+            | "pending_review"
+            | "ready"
+            | "merged"
+            | "rejected"
+            | undefined,
+        ),
+      );
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("merge:approve")
+  .description("approve a ready merge queue entry")
+  .argument("<entry>")
+  .action((entry: string) => {
+    const instance = service();
+    try {
+      print(instance.approveMerge(entry));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("merge:reject")
+  .description("reject a merge queue entry")
+  .argument("<entry>")
+  .requiredOption("--reason <reason>", "rejection reason")
+  .action((entry: string, options: { reason: string }) => {
+    const instance = service();
+    try {
+      print(instance.rejectMerge(entry, options.reason));
     } finally {
       instance.close();
     }

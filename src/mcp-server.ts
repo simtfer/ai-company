@@ -307,6 +307,124 @@ export function buildMcpServer(service: CompanyService): McpServer {
   );
 
   server.registerTool(
+    "company_budget_status",
+    {
+      description:
+        "Show company and position budget spend/remaining, plus task costs.",
+      inputSchema: {},
+    },
+    async () => guarded(() => service.budgetStatus()),
+  );
+
+  server.registerTool(
+    "company_set_company_budget",
+    {
+      description: "Set the company USD budget (and optional minutes).",
+      inputSchema: {
+        usd: z.number().nonnegative(),
+        minutes: z.number().positive().optional(),
+      },
+    },
+    async (args) =>
+      guarded(() => service.setCompanyBudget(args.usd, args.minutes)),
+  );
+
+  server.registerTool(
+    "company_set_position_budget",
+    {
+      description: "Set a position's USD budget.",
+      inputSchema: {
+        name: z.string().min(1),
+        usd: z.number().nonnegative(),
+      },
+    },
+    async (args) =>
+      guarded(() => service.setPositionBudget(args.name, args.usd)),
+  );
+
+  server.registerTool(
+    "company_metrics",
+    {
+      description:
+        "Show task/run metrics, token and USD spend, retries, nodes and merge queue counts.",
+      inputSchema: {},
+    },
+    async () => guarded(() => service.metrics()),
+  );
+
+  server.registerTool(
+    "company_memory_search",
+    {
+      description:
+        "Search company handbook, position memory and thread summaries.",
+      inputSchema: {
+        query: z.string().min(1),
+        limit: z.number().int().positive().max(50).optional(),
+      },
+    },
+    async (args) =>
+      guarded(() => service.searchMemory(args.query, args.limit ?? 20)),
+  );
+
+  server.registerTool(
+    "company_task_retry",
+    {
+      description: "Manually retry a failed or blocked task.",
+      inputSchema: { task_id: z.string().min(1) },
+    },
+    async (args) => guarded(() => service.retryTask(args.task_id)),
+  );
+
+  server.registerTool(
+    "company_review_request",
+    {
+      description:
+        "Create an independent review task for a done task and add it to the merge queue.",
+      inputSchema: {
+        task_id: z.string().min(1),
+        reviewer: z.string().min(1),
+      },
+    },
+    async (args) =>
+      guarded(() => service.requestReview(args.task_id, args.reviewer)),
+  );
+
+  server.registerTool(
+    "company_merge_queue",
+    {
+      description: "List merge queue entries, optionally filtered by status.",
+      inputSchema: {
+        status: z
+          .enum(["pending_review", "ready", "merged", "rejected"])
+          .optional(),
+      },
+    },
+    async (args) => guarded(() => service.mergeQueue(args.status)),
+  );
+
+  server.registerTool(
+    "company_merge_approve",
+    {
+      description: "Approve a ready merge queue entry.",
+      inputSchema: { entry_id: z.string().min(1) },
+    },
+    async (args) => guarded(() => service.approveMerge(args.entry_id)),
+  );
+
+  server.registerTool(
+    "company_merge_reject",
+    {
+      description: "Reject a merge queue entry with a reason.",
+      inputSchema: {
+        entry_id: z.string().min(1),
+        reason: z.string().min(1),
+      },
+    },
+    async (args) =>
+      guarded(() => service.rejectMerge(args.entry_id, args.reason)),
+  );
+
+  server.registerTool(
     "company_adapters",
     {
       description:

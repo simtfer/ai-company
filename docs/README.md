@@ -11,6 +11,7 @@
 | [progress.md](progress.md) | 当前进展、阶段状态、变更日志、下一步 |
 | [ceo-harness-setup.md](ceo-harness-setup.md) | MCP / CLI 接入 CEO harness 的配置与工具清单 |
 | [multi-node.md](multi-node.md) | M2 多电脑节点：注册、心跳、租约、远程派工和产物回传 |
+| [operations.md](operations.md) | M4 预算、指标、重试、评审/合并、备份恢复和运维 |
 
 相关入口：[项目 README](../README.md) · [CEO skill](../ceo-skill/SKILL.md)
 
@@ -45,9 +46,13 @@ Node A / Node B（各台电脑上的 Position）
   - Node Agent 注册、心跳、claim、events、complete、租约续期。
   - 双节点远程派工、产物回传、租约过期重排、drain/revoke。
   - `pnpm demo:multi-node` 可本机模拟两台电脑。
-- 验收证据：`pnpm test` 21 passed、`pnpm demo:harnesses`、`pnpm demo:sessions`、`pnpm demo:code`、`pnpm demo:opencode`、`pnpm demo:multi-node`。
-- M3 IM/语音：⏸ 暂缓（以后做），不阻塞 M4。
-- 下一步：M4 质量、成本与打包加固。
+- M4 质量与打包：🟡 核心完成。
+  - 预算硬停、自动/手动重试、独立 review + merge queue。
+  - metrics、memory search、备份/恢复、日志清理、`bin/aic.mjs`。
+  - 单文件打包、服务自动安装、真实 git merge 仍待补。
+- 验收证据：`pnpm test` 26 passed、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+- M3 IM/语音：⏸ 暂缓（以后做）。
+- 下一步：补 M4 剩余项，或恢复 M3。
 
 ## 更新规则
 

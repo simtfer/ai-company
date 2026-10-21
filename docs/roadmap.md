@@ -12,7 +12,7 @@
 | M1 | 单机真实 harness 闭环 | ✅ 已完成 |
 | M2 | 多电脑节点 | ✅ 已完成 |
 | M3 | IM 与语音入口 | ⏸ 暂缓（以后做） |
-| M4 | 质量、成本与打包加固 | ⬜ 可开始（不依赖 M3） |
+| M4 | 质量、成本与打包加固 | 🟡 核心完成 |
 
 > M3（IM/语音）按用户决定暂缓，不作为 M4 的前置；主动推送能力等 M3 恢复后再补。
 
@@ -219,27 +219,46 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 
 ## M4：质量、成本与打包加固
 
+### 状态
+
+🟡 核心完成（2026-10-21）
+
 ### 目标
 
 让公司可以稳定连续运行，而不是只完成一次演示。
 
-### 交付物
+### 实际交付物
 
-- 独立 reviewer / QA 职位和合并队列。
-- 任务/职位/公司三级预算。
-- 失败重试策略和升级策略。
-- 公司记忆检索（员工手册、架构决策、历史任务）。
-- 指标：成功率、平均耗时、成本、阻塞时间。
-- 单文件打包、Windows 服务/Linux systemd 安装。
-- 备份、恢复、日志轮转。
+- 任务/职位/公司三级 USD 预算；派工前硬停，单任务超预算转 blocked。
+- `max_retries` 自动重试 + `company_task_retry` 手动重试。
+- 独立 review task + merge queue（pending_review / ready / merged / rejected）。
+- `company_metrics`：任务、运行、平均耗时、token/成本、重试、节点、merge queue、预算。
+- `company_memory_search`：员工手册、Position Memory、thread 摘要。
+- `backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`。
+- `bin/aic.mjs` 可执行入口。
+- `docs/operations.md`：预算、指标、评审、备份、Windows/Linux 服务化说明。
+
+### 验收证据
+
+- `pnpm test`：9 个测试文件、26 个测试通过。
+- 预算测试：公司预算为 0 时派工被 `BudgetExceededError` 硬停。
+- 重试测试：失败任务自动重试一次，最终 failed，产生 2 份报告。
+- 评审测试：独立 review task + merge queue，review 完成后 ready，approve 后 merged。
+- 指标/记忆测试：metrics 有任务和预算数据；`playbook` 可检索到 Position Memory。
+- 备份测试：VACUUM INTO 后新 Store 能读回任务。
+- `node bin/aic.mjs --version`、`metrics`、`budget`、`backup` 已验证。
 
 ### 验收
 
-- 连续完成多个任务，成本和失败率可控。
-- 预算超限会硬停并通知 CEO。
-- 合并队列能阻止未通过验收的变更。
-- 卸载/升级不丢公司数据。
-- 有可回放的审计记录。
+- ✅ 预算超限会硬停，并可由 CEO 查询预算状态。
+- ✅ 失败任务支持自动/手动重试。
+- ✅ 合并队列能阻止未 ready 的变更被 approve。
+- ✅ 卸载/升级不丢公司数据（SQLite 备份/恢复）。
+- ✅ 有可回放的审计事件和运行记录。
+- ⚠️ 单文件打包、Windows 服务/Linux systemd 自动安装尚未实现；当前是 wrapper + 文档。
+- ⚠️ 预算只硬性执行 USD；分钟级预算仍只作为 adapter 超时。
+- ⚠️ merge queue 的 `merged` 是审计状态，不会自动执行 git merge。
+- ⚠️ reviewer 自动派工、实时权限询问桥仍待补。
 
 ## 统一验收原则
 

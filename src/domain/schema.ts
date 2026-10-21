@@ -50,6 +50,7 @@ export const PlanTaskInputSchema = z.object({
   depends_on: z.array(z.string()).default([]),
   assignee: z.string().min(1).optional(),
   priority: z.number().int().default(0),
+  max_retries: z.number().int().nonnegative().optional(),
   constraints: z.any().optional(),
   budget: BudgetSchema.optional(),
   deadline: z.string().optional(),
@@ -100,6 +101,7 @@ export const HirePositionInputSchema = z.object({
   model: z.string().optional(),
   workspace: z.string().optional(),
   node_id: z.string().optional(),
+  budget: BudgetSchema.optional(),
 });
 export type HirePositionInput = z.infer<typeof HirePositionInputSchema>;
 
@@ -192,6 +194,8 @@ export interface Task {
   inputs: unknown[];
   budget: Budget;
   deadline: string | null;
+  attempts: number;
+  max_retries: number;
   lease_owner: string | null;
   lease_expires_at: string | null;
   lease_token: string | null;
@@ -211,6 +215,20 @@ export interface Run {
   started_at: string;
   ended_at: string | null;
   cost: Record<string, unknown>;
+  tokens: number;
+  cost_usd: number;
+}
+
+export interface MergeQueueEntry {
+  id: string;
+  company_id: string;
+  task_id: string;
+  review_task_id: string | null;
+  branch: string | null;
+  commit: string | null;
+  status: "pending_review" | "ready" | "merged" | "rejected";
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ReportRecord {

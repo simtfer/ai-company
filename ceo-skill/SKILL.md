@@ -68,9 +68,20 @@ C. 先保留占位符
 - `company_node_drain` 用于维护前排空；`company_node_revoke` 用于永久撤销。
 - 跨公网必须用 Tailscale/WireGuard；M2 的 HTTP 没有内建 TLS。
 
+## 质量与成本（M4）
+
+- 派工前用 `company_budget_status` 检查公司/职位预算；预算不足时不要硬派。
+- 失败任务先看 `max_retries` 是否自动重试；需要人工重试时用 `company_task_retry`。
+- 完成后用 `company_review_request` 找独立 reviewer，不要用作者自己评审。
+- review 完成后 merge queue 进入 `ready`；只有 `ready` 才能 `company_merge_approve`。
+- 用 `company_metrics` 看成功率、耗时、token/成本和阻塞；用 `company_memory_search` 找历史决策。
+- 备份/恢复和日志清理见 `docs/operations.md`。
+
 ## 当前限制
 
 - claude-code、pi、opencode 均已实机验证；三个 harness 的 session 连续和代码修改均已通过。
 - 当前审批是任务执行前闸门 + 工具白名单；harness 工具执行过程中的实时权限桥还未实现。
-- IM/语音（M3）已暂缓；任务完成后的主动推送尚未提供，现在在下次对话用 `company_inbox` 汇报。
+- M4 的 merge queue `merged` 是审计状态，不会自动执行 git merge。
+- M4 只硬性执行 USD 预算；分钟级预算仍只是 adapter 超时。
+- IM/语音（M3）已暂缓；任务完成后的主动推送尚无，在下次对话用 `company_inbox` 汇报。
 - 如果当前 CEO harness 不支持 MCP，可先用 `pnpm cli` 作为工具桥，但人类入口仍然是 CEO harness。

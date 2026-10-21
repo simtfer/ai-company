@@ -102,6 +102,16 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_node_drain` | 排空节点，停止接收新任务 |
 | `company_node_revoke` | 撤销节点 token |
 | `company_adapters` | 探测 fake / claude-code / pi / opencode 适配器能力 |
+| `company_budget_status` | 公司/职位预算与花费 |
+| `company_set_company_budget` | 设置公司 USD 预算 |
+| `company_set_position_budget` | 设置职位 USD 预算 |
+| `company_metrics` | 任务、运行、成本、重试、节点、merge queue 指标 |
+| `company_memory_search` | 搜索员工手册、Position Memory、thread |
+| `company_task_retry` | 手动重试 failed/blocked 任务 |
+| `company_review_request` | 创建独立 review task + merge queue |
+| `company_merge_queue` | 查看合并队列 |
+| `company_merge_approve` | 批准 ready 的合并条目 |
+| `company_merge_reject` | 拒绝合并条目 |
 | `company_demo` | M0 Fake 端到端演示 |
 
 M1 真实执行说明：
@@ -121,6 +131,14 @@ M2 多节点说明：
 - `company_run_ready` 会把远程任务放入租约队列；节点领取后执行，完成后回传报告和产物。
 - `company_node_drain` / `company_node_revoke` 用于排空和撤销节点。
 - 详见 [multi-node.md](multi-node.md)。
+
+M4 质量与成本：
+
+- 派工前检查 `company_budget_status`；预算耗尽会硬停。
+- 任务可设置 `max_retries`；失败自动重试，也可 `company_task_retry`。
+- 完成后 `company_review_request` 创建独立 reviewer 任务和 merge queue；review 通过后 `company_merge_approve`。
+- `company_metrics` 看成本/耗时/成功率；`company_memory_search` 检索历史决策。
+- 备份/恢复、日志清理和服务化见 [operations.md](operations.md)。
 
 ## 5. 安全边界
 

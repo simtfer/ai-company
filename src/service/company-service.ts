@@ -1,5 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
@@ -15,6 +23,7 @@ import {
   type Decision,
   type DecisionRequestInput,
   type HirePositionInput,
+  type MergeQueueEntry,
   type Node,
   type Position,
   type Report,
@@ -99,6 +108,13 @@ export interface ExecutionResult {
   position: Position;
   report: Report;
   run_id: string;
+}
+
+export class BudgetExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BudgetExceededError";
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -398,6 +414,8 @@ export class CompanyService {
           inputs: [],
           budget: inputTask.budget ?? {},
           deadline: inputTask.deadline ?? null,
+          attempts: 0,
+          max_retries: inputTask.max_retries ?? 0,
           lease_owner: null,
           lease_expires_at: null,
           lease_token: null,
@@ -538,6 +556,7 @@ export class CompanyService {
     if (position.status === "busy") {
       throw new Error(`Position ${position.name} is busy`);
     }
+    this.assertBudget(task, position);
     if (position.node_id !== LOCAL_NODE_ID) {
       return this.executeRemoteTask(task, position, instruction);
     }
@@ -573,6 +592,8 @@ export class CompanyService {
       started_at: nowIso(),
       ended_at: null,
       cost: {},
+      tokens: 0,
+      cost_usd: 0,
     });
     this.store.updateTaskStatus(task.id, "running");
     this.store.updatePositionStatus(position.id, "busy");
@@ -684,8 +705,13 @@ export class CompanyService {
         tokens: result.usage?.tokens ?? 0,
         usd: result.usage?.cost_usd ?? 0,
       },
+      tokens: result.usage?.tokens ?? 0,
+      cost_usd: result.usage?.cost_usd ?? 0,
       session_ref: result.session_id ?? null,
     });
+    this.enforceTaskBudget(task, runId);
+    this.markReviewReady(task, validated);
+    this.maybeAutoRetry(task, validated, position);
 
     if (validated.status === "needs_decision" && validated.decision) {
       this.store.insertDecision({
@@ -825,6 +851,8 @@ export class CompanyService {
       started_at: nowIso(),
       ended_at: null,
       cost: {},
+      tokens: 0,
+      cost_usd: 0,
     });
     this.store.updatePositionStatus(position.id, "busy");
     this.recordRunEvent(runId, task.id, "remote.dispatched", {
@@ -1048,7 +1076,7 @@ export class CompanyService {
       status: "idle",
       workspace,
       policy: DEFAULT_POLICY,
-      budget: { usd: 5, minutes: 60 },
+      budget: parsed.budget ?? { usd: 5, minutes: 60 },
       created_at: nowIso(),
     };
     this.store.insertPosition(position);
@@ -1354,9 +1382,13 @@ export class CompanyService {
         tokens: completion.usage?.tokens ?? 0,
         usd: completion.usage?.cost_usd ?? 0,
       },
+      tokens: completion.usage?.tokens ?? 0,
+      cost_usd: completion.usage?.cost_usd ?? 0,
       session_ref: completion.session_id ?? null,
     });
     this.store.clearTaskLease(task.id);
+    this.enforceTaskBudget(task, run.id);
+    this.markReviewReady(task, finalReport);
 
     if (finalReport.status === "needs_decision" && finalReport.decision) {
       this.store.insertDecision({
@@ -1451,6 +1483,338 @@ export class CompanyService {
       }
     }
     return expired;
+  }
+
+  // ---------- budgets, retries, metrics, memory, merge queue ----------
+
+  backupTo(path: string): void {
+    this.store.backupTo(path);
+  }
+
+  pruneLogs(maxAgeDays = 7): { removed: number } {
+    const dir = join(process.cwd(), ".aic", "logs");
+    if (!existsSync(dir)) return { removed: 0 };
+    const cutoff = Date.now() - Math.max(1, maxAgeDays) * 24 * 60 * 60 * 1000;
+    let removed = 0;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".jsonl")) continue;
+      const path = join(dir, name);
+      try {
+        if (statSync(path).mtimeMs < cutoff) {
+          unlinkSync(path);
+          removed += 1;
+        }
+      } catch {
+        // best-effort maintenance
+      }
+    }
+    return { removed };
+  }
+
+  budgetStatus(): Record<string, unknown> {
+    const company = this.requireCompany();
+    const companyLimit = this.numberBudget(company.budget.usd);
+    const companySpend = this.store.companySpend();
+    return {
+      company: {
+        budget_usd: companyLimit,
+        spent_usd: companySpend,
+        remaining_usd:
+          companyLimit === null ? null : Math.max(0, companyLimit - companySpend),
+      },
+      positions: this.store.listPositions().map((position) => {
+        const limit = this.numberBudget(position.budget.usd);
+        const spent = this.store.positionSpend(position.id);
+        return {
+          name: position.name,
+          budget_usd: limit,
+          spent_usd: spent,
+          remaining_usd: limit === null ? null : Math.max(0, limit - spent),
+        };
+      }),
+    };
+  }
+
+  setCompanyBudget(usd: number, minutes?: number): Record<string, unknown> {
+    const company = this.requireCompany();
+    const budget = { ...company.budget, usd, ...(minutes ? { minutes } : {}) };
+    this.store.updateCompanyBudget(company.id, budget);
+    return budget;
+  }
+
+  setPositionBudget(name: string, usd: number): Record<string, unknown> {
+    const position = this.requirePositionByName(name);
+    const budget = { ...position.budget, usd };
+    this.store.updatePositionBudget(position.id, budget);
+    return budget;
+  }
+
+  retryTask(taskId: string): Task {
+    const task = this.requireTask(taskId);
+    if (task.status !== "failed" && task.status !== "blocked") {
+      throw new Error(`Task ${taskId} is ${task.status}, not retryable`);
+    }
+    this.store.resetTaskForRetry(task.id);
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "task.retry.manual",
+      payload: { attempts: task.attempts },
+      created_at: nowIso(),
+    });
+    return this.requireTask(task.id);
+  }
+
+  metrics(): Record<string, unknown> {
+    const tasks = this.store.listTasks();
+    const runs = this.store.listRunsForCompany();
+    const byStatus = countByStatus(tasks);
+    const finished = runs.filter((run) => run.ended_at);
+    const avgDuration =
+      finished.length === 0
+        ? 0
+        : finished.reduce((sum, run) => {
+            return sum + (Date.parse(run.ended_at!) - Date.parse(run.started_at));
+          }, 0) / finished.length;
+    return {
+      tasks: {
+        total: tasks.length,
+        by_status: byStatus,
+        retried: tasks.filter((task) => task.attempts > 0).length,
+      },
+      runs: {
+        total: runs.length,
+        finished: finished.length,
+        avg_duration_ms: Math.round(avgDuration),
+        tokens: runs.reduce((sum, run) => sum + run.tokens, 0),
+        cost_usd: runs.reduce((sum, run) => sum + run.cost_usd, 0),
+      },
+      nodes: this.store.listNodes().map((node) => ({
+        name: node.name,
+        online: this.nodeIsOnline(node),
+        kind: node.kind,
+      })),
+      merge_queue: this.store.listMergeQueue().reduce<Record<string, number>>(
+        (counts, entry) => {
+          counts[entry.status] = (counts[entry.status] ?? 0) + 1;
+          return counts;
+        },
+        {},
+      ),
+      budgets: this.budgetStatus(),
+    };
+  }
+
+  searchMemory(query: string, limit = 20): Record<string, unknown> {
+    const q = query.trim();
+    if (!q) throw new Error("Memory query is required");
+    const company = this.requireCompany();
+    const results = [
+      ...this.store.searchPositionMemory(q, limit),
+      ...this.store.searchThreads(q, limit),
+    ];
+    if (company.handbook.toLowerCase().includes(q.toLowerCase())) {
+      results.unshift({
+        kind: "company_handbook",
+        excerpt: company.handbook.slice(0, 2_000),
+      });
+    }
+    return { query: q, results: results.slice(0, limit) };
+  }
+
+  requestReview(
+    taskId: string,
+    reviewer: string,
+  ): { review_task: Task; merge_entry: Record<string, unknown> } {
+    const task = this.requireTask(taskId);
+    if (task.status !== "done") {
+      throw new Error(`Task ${taskId} must be done before review`);
+    }
+    if (task.assignee === reviewer) {
+      throw new Error("Reviewer must be independent from the task author");
+    }
+    const reviewerPosition = this.requirePositionByName(reviewer);
+    const latestReport = this.store.getLatestReportForTask(task.id);
+    const change = latestReport?.report.changes?.[0] as
+      | { branch?: unknown; commit?: unknown }
+      | undefined;
+    const branch =
+      typeof change?.branch === "string" ? change.branch : `task/${task.id}`;
+    const commit =
+      typeof change?.commit === "string" ? change.commit : null;
+
+    const reviewTask: Task = {
+      id: newId("t"),
+      company_id: MAIN_COMPANY_ID,
+      thread_id: task.thread_id,
+      parent_task_id: task.id,
+      task_key: `review-${task.id.slice(-6)}`,
+      title: `Review: ${task.title}`,
+      objective: `Independently review task ${task.id}. Check acceptance, diff, tests and risks. Do not rewrite the feature unless a real defect is found.`,
+      assignee: reviewer,
+      status: "queued",
+      priority: task.priority,
+      acceptance: ["review report contains verdict", "evidence or residual risks"],
+      constraints: { review_of: task.id },
+      inputs: [],
+      budget: {},
+      deadline: null,
+      attempts: 0,
+      max_retries: 0,
+      lease_owner: null,
+      lease_expires_at: null,
+      lease_token: null,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    };
+    this.store.insertTask(reviewTask);
+    this.store.addTaskEdge(reviewTask.id, task.id);
+    const entry = {
+      id: newId("mq"),
+      company_id: MAIN_COMPANY_ID,
+      task_id: task.id,
+      review_task_id: reviewTask.id,
+      branch,
+      commit,
+      status: "pending_review" as const,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    };
+    this.store.insertMergeQueue(entry);
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "review.requested",
+      payload: {
+        review_task_id: reviewTask.id,
+        reviewer: reviewerPosition.name,
+        merge_entry_id: entry.id,
+      },
+      created_at: nowIso(),
+    });
+    return { review_task: reviewTask, merge_entry: entry };
+  }
+
+  mergeQueue(
+    status?: "pending_review" | "ready" | "merged" | "rejected",
+  ): MergeQueueEntry[] {
+    return this.store.listMergeQueue(status);
+  }
+
+  approveMerge(entryId: string): Record<string, unknown> {
+    const entry = this.store.getMergeQueueEntry(entryId);
+    if (!entry) throw new Error(`Merge entry not found: ${entryId}`);
+    if (entry.status !== "ready") {
+      throw new Error(`Merge entry is ${entry.status}, expected ready`);
+    }
+    this.store.updateMergeQueueStatus(entry.id, "merged");
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: entry.task_id,
+      type: "merge.approved",
+      payload: { entry_id: entry.id, branch: entry.branch, commit: entry.commit },
+      created_at: nowIso(),
+    });
+    return this.store.getMergeQueueEntry(entry.id) as unknown as Record<string, unknown>;
+  }
+
+  rejectMerge(entryId: string, reason: string): Record<string, unknown> {
+    const entry = this.store.getMergeQueueEntry(entryId);
+    if (!entry) throw new Error(`Merge entry not found: ${entryId}`);
+    if (entry.status === "merged") throw new Error("Already merged");
+    this.store.updateMergeQueueStatus(entry.id, "rejected");
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: entry.task_id,
+      type: "merge.rejected",
+      payload: { entry_id: entry.id, reason },
+      created_at: nowIso(),
+    });
+    return this.store.getMergeQueueEntry(entry.id) as unknown as Record<string, unknown>;
+  }
+
+  private assertBudget(task: Task, position: Position): void {
+    const company = this.requireCompany();
+    const companyLimit = this.numberBudget(company.budget.usd);
+    if (companyLimit !== null && this.store.companySpend() >= companyLimit) {
+      throw new BudgetExceededError(
+        `Company budget exceeded: ${this.store.companySpend()} / ${companyLimit} USD`,
+      );
+    }
+    const positionLimit = this.numberBudget(position.budget.usd);
+    if (positionLimit !== null && this.store.positionSpend(position.id) >= positionLimit) {
+      throw new BudgetExceededError(
+        `Position ${position.name} budget exceeded: ${this.store.positionSpend(position.id)} / ${positionLimit} USD`,
+      );
+    }
+    const taskLimit = this.numberBudget(task.budget.usd);
+    if (taskLimit !== null && this.store.taskSpend(task.id) >= taskLimit) {
+      throw new BudgetExceededError(
+        `Task ${task.id} budget exceeded: ${this.store.taskSpend(task.id)} / ${taskLimit} USD`,
+      );
+    }
+  }
+
+  private enforceTaskBudget(task: Task, runId: string): void {
+    const limit = this.numberBudget(task.budget.usd);
+    if (limit === null) return;
+    const spent = this.store.taskSpend(task.id);
+    if (spent > limit) {
+      this.store.updateTaskStatus(task.id, "blocked");
+      this.recordRunEvent(runId, task.id, "budget.exceeded", {
+        budget_usd: limit,
+        spent_usd: spent,
+      });
+    }
+  }
+
+  private numberBudget(value: unknown): number | null {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  private markReviewReady(task: Task, report: Report): void {
+    if (
+      report.status !== "done" ||
+      typeof task.constraints.review_of !== "string"
+    ) {
+      return;
+    }
+    const entry = this.store.findMergeByReviewTask(task.id);
+    if (entry && entry.status === "pending_review") {
+      this.store.updateMergeQueueStatus(entry.id, "ready");
+      this.store.insertEvent({
+        id: newId("e"),
+        run_id: null,
+        task_id: task.id,
+        type: "merge.ready",
+        payload: { entry_id: entry.id, review_task_id: task.id },
+        created_at: nowIso(),
+      });
+    }
+  }
+
+  private maybeAutoRetry(task: Task, report: Report, position: Position): boolean {
+    if (report.status !== "failed" || task.attempts >= task.max_retries) {
+      return false;
+    }
+    this.store.incrementTaskAttempt(task.id);
+    this.store.updatePositionStatus(position.id, "idle");
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "task.retry",
+      payload: {
+        attempt: task.attempts + 1,
+        max_retries: task.max_retries,
+      },
+      created_at: nowIso(),
+    });
+    return true;
   }
 
   setNodeDrain(identifier: string, drain: boolean): Node {

@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "AI company orchestrated by a CEO harness",
+  "bin": {
+    "aic": "./bin/aic.mjs"
+  },
   "engines": {
     "node": ">=22.5"
   },
@@ -19,6 +22,9 @@
     "demo:code": "tsx src/cli.ts demo:code",
     "demo:multi-node": "tsx src/cli.ts demo:multi-node",
     "probe": "tsx src/cli.ts probe",
+    "metrics": "tsx src/cli.ts metrics",
+    "budget": "tsx src/cli.ts budget",
+    "backup": "tsx src/cli.ts backup",
     "node:token": "tsx src/cli.ts node:token",
     "node:join": "tsx src/cli.ts node:join",
     "test": "vitest run",

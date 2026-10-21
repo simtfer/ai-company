@@ -7,14 +7,14 @@
 - 一个 harness 实例就是一个职位（Position）。
 - Company Runtime 是无界面后台，负责任务、会话、审批、审计和节点。
 
-当前进度：**M2 完成**。Claude Code、pi、opencode 均已实机验证；支持 worktree、测试证据、session 恢复、任务级审批、工具白名单和多电脑节点。
+当前进度：**M4 核心完成**，M3 IM/语音暂缓。Claude Code、pi、opencode 均已实机验证；支持 worktree、测试证据、session 恢复、多电脑节点、预算、重试、独立评审/合并队列、指标、记忆检索和备份恢复。
 
 ## 快速开始
 
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 21 个测试
+pnpm test          # 26 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -37,6 +37,10 @@ pnpm cli inbox      # 最近报告和待决策
 pnpm cli threads    # 目标线程
 pnpm cli node:token # 创建一次性节点注册令牌
 pnpm cli node:join  # 在另一台电脑加入节点
+pnpm cli metrics    # 任务/运行/成本/重试/节点指标
+pnpm cli budget     # 公司/职位预算
+pnpm cli backup --out D:\backups\ai-company.db
+pnpm cli restore --from D:\backups\ai-company.db
 pnpm mcp            # 启动 MCP stdio server，供 CEO harness 调用
 pnpm serve          # 启动 HTTP API（默认 127.0.0.1:4317）
 pnpm serve --host 0.0.0.0 --port 4317   # 跨机器时绑定内网/Tailscale
@@ -74,6 +78,17 @@ MCP 配置示例：
 - [docs/progress.md](docs/progress.md)：阶段进展
 - [docs/ceo-harness-setup.md](docs/ceo-harness-setup.md)：MCP 接入说明
 - [docs/multi-node.md](docs/multi-node.md)：多电脑节点部署与节点管理
+- [docs/operations.md](docs/operations.md)：预算、指标、评审/合并、备份恢复和运维
+
+## M4 已实现
+
+- 公司/职位/任务三级 USD 预算；派工前硬停。
+- `max_retries` 自动重试 + `company_task_retry` 手动重试。
+- 独立 review task + merge queue（pending_review / ready / merged / rejected）。
+- `company_metrics`：任务、运行、耗时、token/成本、重试、节点、预算。
+- `company_memory_search`：员工手册、Position Memory、thread 摘要。
+- SQLite `VACUUM INTO` 备份、`restore`、`logs:prune`。
+- `bin/aic.mjs` 入口和 [docs/operations.md](docs/operations.md)。
 
 ## M2 已实现
 

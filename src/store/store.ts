@@ -9,6 +9,7 @@ import type {
   Decision,
   EventRecord,
   MemoryEntry,
+  MergeQueueEntry,
   Node,
   Position,
   PositionStatus,
@@ -91,6 +92,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   inputs_json TEXT NOT NULL,
   budget_json TEXT NOT NULL,
   deadline TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_retries INTEGER NOT NULL DEFAULT 0,
   lease_owner TEXT,
   lease_expires_at TEXT,
   lease_token TEXT,
@@ -115,7 +118,9 @@ CREATE TABLE IF NOT EXISTS runs (
   lease_token TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
-  cost_json TEXT NOT NULL
+  cost_json TEXT NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS reports (
@@ -204,6 +209,18 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
   node_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS merge_queue (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  review_task_id TEXT,
+  branch TEXT,
+  commit_sha TEXT,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_thread ON tasks(thread_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
 CREATE INDEX IF NOT EXISTS idx_reports_task ON reports(task_id);
@@ -253,11 +270,15 @@ export class Store {
     this.ensureColumn("nodes", "drain", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("nodes", "revoked_at", "TEXT");
     this.ensureColumn("nodes", "registered_at", "TEXT");
+    this.ensureColumn("tasks", "attempts", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("tasks", "max_retries", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("tasks", "lease_owner", "TEXT");
     this.ensureColumn("tasks", "lease_expires_at", "TEXT");
     this.ensureColumn("tasks", "lease_token", "TEXT");
     this.ensureColumn("runs", "node_id", "TEXT");
     this.ensureColumn("runs", "lease_token", "TEXT");
+    this.ensureColumn("runs", "tokens", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("runs", "cost_usd", "REAL NOT NULL DEFAULT 0");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -271,6 +292,11 @@ export class Store {
 
   close(): void {
     this.db.close();
+  }
+
+  backupTo(path: string): void {
+    const escaped = path.replaceAll("'", "''");
+    this.db.exec(`VACUUM INTO '${escaped}'`);
   }
 
   transaction<T>(fn: () => T): T {
@@ -317,6 +343,18 @@ export class Store {
         encodeJson(company.budget),
         company.created_at,
       );
+  }
+
+  updateCompanyBudget(id: string, budget: Record<string, unknown>): void {
+    this.db
+      .prepare("UPDATE companies SET budget_json = ? WHERE id = ?")
+      .run(encodeJson(budget), id);
+  }
+
+  updatePositionBudget(id: string, budget: Record<string, unknown>): void {
+    this.db
+      .prepare("UPDATE positions SET budget_json = ? WHERE id = ?")
+      .run(encodeJson(budget), id);
   }
 
   getNode(id = LOCAL_NODE_ID): Node | null {
@@ -640,9 +678,9 @@ export class Store {
         `INSERT INTO tasks
          (id, company_id, thread_id, parent_task_id, task_key, title, objective,
           assignee, status, priority, acceptance_json, constraints_json, inputs_json,
-          budget_json, deadline, lease_owner, lease_expires_at, lease_token,
-          created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          budget_json, deadline, attempts, max_retries,
+          lease_owner, lease_expires_at, lease_token, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         task.id,
@@ -660,6 +698,8 @@ export class Store {
         encodeJson(task.inputs),
         encodeJson(task.budget),
         task.deadline,
+        task.attempts,
+        task.max_retries,
         task.lease_owner,
         task.lease_expires_at,
         task.lease_token,
@@ -698,6 +738,26 @@ export class Store {
       )
       .all(companyId, status) as Record<string, unknown>[];
     return rows.map((row) => this.taskFromRow(row));
+  }
+
+  incrementTaskAttempt(id: string): void {
+    this.db
+      .prepare(
+        `UPDATE tasks SET attempts = attempts + 1, status = 'assigned',
+         lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+         updated_at = ? WHERE id = ?`,
+      )
+      .run(nowIso(), id);
+  }
+
+  resetTaskForRetry(id: string): void {
+    this.db
+      .prepare(
+        `UPDATE tasks SET status = 'assigned',
+         lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+         updated_at = ? WHERE id = ?`,
+      )
+      .run(nowIso(), id);
   }
 
   updateTaskStatus(id: string, status: TaskStatus): void {
@@ -849,8 +909,8 @@ export class Store {
       .prepare(
         `INSERT INTO runs
          (id, task_id, position_id, status, session_ref, context_pack_id,
-          node_id, lease_token, started_at, ended_at, cost_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          node_id, lease_token, started_at, ended_at, cost_json, tokens, cost_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -864,6 +924,8 @@ export class Store {
         run.started_at,
         run.ended_at,
         encodeJson(run.cost),
+        run.tokens,
+        run.cost_usd,
       );
     return run;
   }
@@ -880,6 +942,8 @@ export class Store {
         | "context_pack_id"
         | "node_id"
         | "lease_token"
+        | "tokens"
+        | "cost_usd"
       >
     >,
   ): void {
@@ -888,7 +952,8 @@ export class Store {
     this.db
       .prepare(
         `UPDATE runs SET status = ?, ended_at = ?, cost_json = ?, session_ref = ?,
-         context_pack_id = ?, node_id = ?, lease_token = ? WHERE id = ?`,
+         context_pack_id = ?, node_id = ?, lease_token = ?, tokens = ?, cost_usd = ?
+         WHERE id = ?`,
       )
       .run(
         patch.status ?? current.status,
@@ -900,6 +965,8 @@ export class Store {
         patch.lease_token === null
           ? null
           : (patch.lease_token ?? current.lease_token),
+        patch.tokens ?? current.tokens,
+        patch.cost_usd ?? current.cost_usd,
         id,
       );
   }
@@ -923,6 +990,46 @@ export class Store {
       .prepare("SELECT * FROM runs WHERE task_id = ? ORDER BY started_at ASC")
       .all(taskId) as Record<string, unknown>[];
     return rows.map((row) => this.runFromRow(row));
+  }
+
+  listRunsForCompany(companyId = MAIN_COMPANY_ID): Run[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.* FROM runs r
+         JOIN tasks t ON t.id = r.task_id
+         WHERE t.company_id = ?
+         ORDER BY r.started_at ASC`,
+      )
+      .all(companyId) as Record<string, unknown>[];
+    return rows.map((row) => this.runFromRow(row));
+  }
+
+  companySpend(companyId = MAIN_COMPANY_ID): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(r.cost_usd), 0) AS spend FROM runs r
+         JOIN tasks t ON t.id = r.task_id WHERE t.company_id = ?`,
+      )
+      .get(companyId) as { spend: number } | undefined;
+    return Number(row?.spend ?? 0);
+  }
+
+  positionSpend(positionId: string): number {
+    const row = this.db
+      .prepare(
+        "SELECT COALESCE(SUM(cost_usd), 0) AS spend FROM runs WHERE position_id = ?",
+      )
+      .get(positionId) as { spend: number } | undefined;
+    return Number(row?.spend ?? 0);
+  }
+
+  taskSpend(taskId: string): number {
+    const row = this.db
+      .prepare(
+        "SELECT COALESCE(SUM(cost_usd), 0) AS spend FROM runs WHERE task_id = ?",
+      )
+      .get(taskId) as { spend: number } | undefined;
+    return Number(row?.spend ?? 0);
   }
 
   insertReport(report: ReportRecord): void {
@@ -1051,6 +1158,110 @@ export class Store {
         `UPDATE decisions SET status = 'resolved', chosen = ?, rationale = ?, resolved_at = ? WHERE id = ?`,
       )
       .run(chosen, rationale, nowIso(), id);
+  }
+
+  // ---------- merge queue ----------
+
+  insertMergeQueue(entry: MergeQueueEntry): MergeQueueEntry {
+    this.db
+      .prepare(
+        `INSERT INTO merge_queue
+         (id, company_id, task_id, review_task_id, branch, commit_sha, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.company_id,
+        entry.task_id,
+        entry.review_task_id,
+        entry.branch,
+        entry.commit,
+        entry.status,
+        entry.created_at,
+        entry.updated_at,
+      );
+    return entry;
+  }
+
+  getMergeQueueEntry(id: string): MergeQueueEntry | null {
+    const row = this.db
+      .prepare("SELECT * FROM merge_queue WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mergeQueueFromRow(row) : null;
+  }
+
+  listMergeQueue(status?: MergeQueueEntry["status"]): MergeQueueEntry[] {
+    const rows = status
+      ? (this.db
+          .prepare(
+            "SELECT * FROM merge_queue WHERE status = ? ORDER BY created_at ASC",
+          )
+          .all(status) as Record<string, unknown>[])
+      : (this.db
+          .prepare("SELECT * FROM merge_queue ORDER BY created_at ASC")
+          .all() as Record<string, unknown>[]);
+    return rows.map((row) => this.mergeQueueFromRow(row));
+  }
+
+  updateMergeQueueStatus(id: string, status: MergeQueueEntry["status"]): void {
+    this.db
+      .prepare("UPDATE merge_queue SET status = ?, updated_at = ? WHERE id = ?")
+      .run(status, nowIso(), id);
+  }
+
+  setMergeQueueReviewTask(id: string, reviewTaskId: string): void {
+    this.db
+      .prepare(
+        "UPDATE merge_queue SET review_task_id = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(reviewTaskId, nowIso(), id);
+  }
+
+  findMergeByReviewTask(reviewTaskId: string): MergeQueueEntry | null {
+    const row = this.db
+      .prepare("SELECT * FROM merge_queue WHERE review_task_id = ? LIMIT 1")
+      .get(reviewTaskId) as Record<string, unknown> | undefined;
+    return row ? this.mergeQueueFromRow(row) : null;
+  }
+
+  // ---------- memory search ----------
+
+  searchPositionMemory(query: string, limit = 20): Array<Record<string, unknown>> {
+    const like = `%${query}%`;
+    const rows = this.db
+      .prepare(
+        `SELECT m.position_id, p.name AS position_name, m.key, m.value_json, m.updated_at
+         FROM position_memory m
+         JOIN positions p ON p.id = m.position_id
+         WHERE m.key LIKE ? OR m.value_json LIKE ?
+         ORDER BY m.updated_at DESC LIMIT ?`,
+      )
+      .all(like, like, limit) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      kind: "position_memory",
+      position: asString(row.position_name),
+      key: asString(row.key),
+      value: decodeJson(row.value_json as string, null),
+      updated_at: asString(row.updated_at),
+    }));
+  }
+
+  searchThreads(query: string, limit = 20): Array<Record<string, unknown>> {
+    const like = `%${query}%`;
+    const rows = this.db
+      .prepare(
+        `SELECT id, title, goal, summary, updated_at FROM threads
+         WHERE title LIKE ? OR goal LIKE ? OR summary LIKE ?
+         ORDER BY updated_at DESC LIMIT ?`,
+      )
+      .all(like, like, like, limit) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      kind: "thread",
+      thread_id: asString(row.id),
+      title: asString(row.title),
+      summary: asString(row.summary),
+      updated_at: asString(row.updated_at),
+    }));
   }
 
   // ---------- sessions / memory / context / artifacts ----------
@@ -1222,6 +1433,8 @@ export class Store {
       inputs: decodeJson<unknown[]>(row.inputs_json as string, []),
       budget: decodeJson<Budget>(row.budget_json as string, {}),
       deadline: (row.deadline as string | null) ?? null,
+      attempts: Number(row.attempts ?? 0),
+      max_retries: Number(row.max_retries ?? 0),
       lease_owner: (row.lease_owner as string | null) ?? null,
       lease_expires_at: (row.lease_expires_at as string | null) ?? null,
       lease_token: (row.lease_token as string | null) ?? null,
@@ -1243,6 +1456,8 @@ export class Store {
       started_at: asString(row.started_at),
       ended_at: (row.ended_at as string | null) ?? null,
       cost: decodeJson(row.cost_json as string, {}),
+      tokens: Number(row.tokens ?? 0),
+      cost_usd: Number(row.cost_usd ?? 0),
     };
   }
 
@@ -1287,6 +1502,20 @@ export class Store {
       last_used_at: asString(row.last_used_at),
       expires_at: (row.expires_at as string | null) ?? null,
       status: asString(row.status),
+    };
+  }
+
+  private mergeQueueFromRow(row: Record<string, unknown>): MergeQueueEntry {
+    return {
+      id: asString(row.id),
+      company_id: asString(row.company_id),
+      task_id: asString(row.task_id),
+      review_task_id: (row.review_task_id as string | null) ?? null,
+      branch: (row.branch as string | null) ?? null,
+      commit: (row.commit_sha as string | null) ?? null,
+      status: asString(row.status) as MergeQueueEntry["status"],
+      created_at: asString(row.created_at),
+      updated_at: asString(row.updated_at),
     };
   }
 
