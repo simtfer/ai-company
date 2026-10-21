@@ -140,6 +140,7 @@ M4 质量与成本：
 - `company_metrics` 看成本/耗时/成功率；`company_memory_search` 检索历史决策。
 - `claude-sdk` 职位在工具执行前通过 `canUseTool` 暂停，CEO/人类用 `decision:resolve` 或 HTTP 批准；详见 [operations.md](operations.md)。
 - 单文件打包 `pnpm build:sea`；服务安装 `service:install`；备份/恢复、日志清理见 [operations.md](operations.md)。
+- 已实测 Claude Code CEO 通过 MCP 调度两个真实 pi 职位完成两轮 4 个任务，见 [ceo-pi-test.md](ceo-pi-test.md)。
 
 ## 5. 安全边界
 

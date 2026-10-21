@@ -31,6 +31,7 @@
     "build:sea": "pnpm build && esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/aic.cjs && node --build-sea=sea-config.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:ceo-pi": "tsx scripts/ceo-pi-test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

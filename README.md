@@ -26,6 +26,7 @@ pnpm demo:sessions    # 三个 harness 各做一次 session 连续
 pnpm demo:code        # Claude Code 和 pi 真实修改代码
 pnpm demo:opencode    # opencode dev + QA 闭环
 pnpm demo:multi-node  # 两个 Node Agent 远程执行
+pnpm test:ceo-pi      # Claude Code CEO × 两个真实 pi 职位，多轮任务
 ```
 
 其他命令：
@@ -83,6 +84,7 @@ MCP 配置示例：
 - [docs/ceo-harness-setup.md](docs/ceo-harness-setup.md)：MCP 接入说明
 - [docs/multi-node.md](docs/multi-node.md)：多电脑节点部署与节点管理
 - [docs/operations.md](docs/operations.md)：预算、指标、评审/合并、备份恢复和运维
+- [docs/ceo-pi-test.md](docs/ceo-pi-test.md)：Claude Code CEO × 两个 pi 职位多轮实测报告
 
 ## M4 已实现
 

@@ -122,20 +122,23 @@
 - 服务化：`service:install` 生成/安装 Windows 计划任务或 Linux systemd unit；`service:uninstall`。
 - 预算：分钟级公司/职位/任务预算也参与硬停；任务超时/超预算转 blocked。
 - 实时权限桥：新增 `claude-sdk` 适配器，使用 Claude Agent SDK `canUseTool`；工具执行前写 decision，等待 `decision:resolve` / HTTP 审批；真实 Claude smoke test 创建文件成功。
-- 测试：10 个测试文件、29 个测试通过，新增实时审批、分钟预算、真实 git merge 等。
-- M4 核心完成；剩余项：远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
+- 真实 CEO 集成：Claude Code `2.1.304` 作为 CEO，通过 MCP 调度两个真实 pi 职位，连续两轮 4 个任务全部 done、测试通过；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
+- 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
+- 测试：10 个测试文件、29 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
+- M4 核心完成；剩余项：多分支集成、远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
 
 ## 下一步
 
-1. 补远程节点 git 分支自动推送到共享 remote。
-2. 评估是否把实时权限桥扩展到 pi/opencode（当前仅 Claude SDK 支持原生 canUseTool）。
-3. M3 IM/语音保持设计，等以后恢复。
-4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
+1. 补多分支集成：CEO 依赖 / `base_ref` / merge queue 把多个 pi 任务结果合成一条主线。
+2. 补远程节点 git 分支自动推送到共享 remote。
+3. 评估是否把实时权限桥扩展到 pi/opencode（当前仅 Claude SDK 支持原生 canUseTool）。
+4. M3 IM/语音保持设计，等以后恢复。
 
 ## 阻塞与风险
 
 - 当前无阻塞。
 - 风险：M2 使用 HTTP 拉取，没有内建 TLS；跨公网必须用 Tailscale/WireGuard 或反向代理。
+- 风险：多个职位各自基于 main 的 worktree 会产生独立分支，当前不会自动合成一条集成分支；CEO 需要显式依赖/base_ref 或 merge queue。
 - 风险：远程 git 分支目前留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 - 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
 - 风险：实时权限桥目前只覆盖 Claude SDK（`claude-sdk`）；pi/opencode 仍只能使用执行前审批 + 工具白名单。

@@ -12,6 +12,7 @@
 | [ceo-harness-setup.md](ceo-harness-setup.md) | MCP / CLI 接入 CEO harness 的配置与工具清单 |
 | [multi-node.md](multi-node.md) | M2 多电脑节点：注册、心跳、租约、远程派工和产物回传 |
 | [operations.md](operations.md) | M4 预算、指标、重试、评审/合并、备份恢复和运维 |
+| [ceo-pi-test.md](ceo-pi-test.md) | Claude Code CEO × 两个 pi 职位多轮实测报告 |
 
 相关入口：[项目 README](../README.md) · [CEO skill](../ceo-skill/SKILL.md)
 
@@ -52,8 +53,9 @@ Node A / Node B（各台电脑上的 Position）
   - `pnpm build:sea` 单文件可执行；`service:install` 生成/安装 Windows/Linux 服务。
   - Claude SDK 实时权限桥：`claude-sdk` 工具执行前暂停，等待人类 decision。
 - 验收证据：`pnpm test` 29 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+- 真实 CEO 集成：Claude Code 作为 CEO，两个 pi 职位完成两轮 4 个任务；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
 - M3 IM/语音：⏸ 暂缓（以后做）。
-- 下一步：pi/opencode 实时权限、远程 git 分支推送，或恢复 M3。
+- 下一步：多分支集成、pi/opencode 实时权限、远程 git 分支推送，或恢复 M3。
 
 ## 更新规则
 

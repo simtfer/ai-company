@@ -59,7 +59,8 @@ import type {
 } from "../node/protocol";
 import { Store, newId, nowIso } from "../store/store";
 
-const DEFAULT_DB_PATH = join(process.cwd(), ".aic", "company.db");
+const DEFAULT_DB_PATH =
+  process.env.AIC_DB_PATH ?? join(process.cwd(), ".aic", "company.db");
 
 const HANDBOOK = `# AI Company 员工手册（M1）
 

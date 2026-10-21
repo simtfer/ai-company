@@ -254,6 +254,8 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - `service:install --name ...` 生成 Windows 计划任务定义已验证。
 - 实时审批测试：Claude SDK `canUseTool` 暂停，human decision 允许后继续并返回 done。
 - 真实 Claude smoke test：被暂停的 Bash 工具在批准后创建 `live.txt`，内容为 `LIVE_OK`。
+- 真实 CEO 集成：Claude Code 作为 CEO，两个真实 pi 职位连续两轮 4 个任务全部 done，`node --test` 均通过；见 [ceo-pi-test.md](ceo-pi-test.md)。
+- 该实测暴露多分支未自动集成的缺口，已列为下一步。
 
 ### 验收
 
