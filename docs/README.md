@@ -46,7 +46,8 @@ Node A / Node B（各台电脑上的 Position）
   - 双节点远程派工、产物回传、租约过期重排、drain/revoke。
   - `pnpm demo:multi-node` 可本机模拟两台电脑。
 - 验收证据：`pnpm test` 21 passed、`pnpm demo:harnesses`、`pnpm demo:sessions`、`pnpm demo:code`、`pnpm demo:opencode`、`pnpm demo:multi-node`。
-- 下一步：M3 IM/语音入口。
+- M3 IM/语音：⏸ 暂缓（以后做），不阻塞 M4。
+- 下一步：M4 质量、成本与打包加固。
 
 ## 更新规则
 
