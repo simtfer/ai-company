@@ -131,6 +131,7 @@
 - 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:pi-live` 真实验证 `pi.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
 - 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
 - Position 级 sticky session：一个 Position 固定 cwd，所有任务复用同一个 active session；新员工新 cwd 新 session；session 丢失 blocked；失败任务 checkpoint commit。
+- 真实 pi 验证：同一 employee 连续两个任务，两次 run 的 session_ref 完全相同，cwd 相同。
 - 测试：11 个测试文件、34 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
 - 真实 CEO + 集成实测：5/5 任务 done，4 个 source branch 全部合入，集成分支 `integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
 - M4 核心完成；剩余项：远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。

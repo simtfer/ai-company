@@ -264,6 +264,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 共享 remote 测试：任务分支 push 到 bare remote，remote ref 与本地 commit 一致。
 - 冲突集成测试：两个任务修改同一文件产生冲突，自动创建冲突任务并解决，integration 重试后 done。
 - Sticky session 测试：同一 Position 两个不同任务只 start 一次、resume 一次，cwd 相同；resume 失败任务 blocked，不新建 session。
+- 真实 pi 验证：同一 employee 连续两个任务，两次 run 的 session_ref 完全相同，cwd 相同。
 - opencode ACP 实测：`session/request_permission` 暂停 Bash，人类批准后创建 `acp.txt`，内容 `ACP_OK`。
 - pi 实测：扩展 `tool_call` 暂停 bash，人类批准后创建 `pi.txt`，内容 `PI_OK`。
 

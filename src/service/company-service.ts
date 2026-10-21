@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   CreatePlanInputSchema,
@@ -93,6 +93,7 @@ const ACTIVE_STATUSES: TaskStatus[] = [
 
 export interface CompanyServiceOptions {
   dbPath?: string;
+  workspaceRoot?: string;
   fakeDelayMs?: number;
   seed?: boolean;
   adapters?: HarnessAdapter[];
@@ -144,9 +145,13 @@ export class CompanyService {
   private readonly adapters = new Map<string, HarnessAdapter>();
   private readonly remoteWaitMs: number;
   private readonly approvalTimeoutMs: number;
+  private readonly workspaceRoot: string;
 
   constructor(options: CompanyServiceOptions = {}) {
     this.store = new Store(options.dbPath ?? DEFAULT_DB_PATH);
+    const dbPath = options.dbPath ?? DEFAULT_DB_PATH;
+    this.workspaceRoot =
+      options.workspaceRoot ?? dirname(resolve(dbPath));
     this.fake = new FakeHarness(options.fakeDelayMs ?? 5);
     this.workspaceManager =
       options.workspaceManager ?? new GitWorkspaceManager();
@@ -1558,7 +1563,7 @@ export class CompanyService {
       parsed.workspace ??
       (node.kind === "remote"
         ? join("workspace", parsed.name)
-        : join(process.cwd(), ".aic", "workspaces", parsed.name));
+        : join(this.workspaceRoot, "workspaces", parsed.name));
     if (node.kind !== "remote") {
       mkdirSync(workspace, { recursive: true });
     }
