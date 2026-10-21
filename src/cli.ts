@@ -201,6 +201,38 @@ program
   });
 
 program
+  .command("integration")
+  .description("create an integration task for a thread")
+  .requiredOption("--thread <id>", "thread id")
+  .requiredOption("--assignee <name>", "position responsible for integration")
+  .option("--title <title>", "integration task title")
+  .option("--test <command>", "integration test command")
+  .option("--source <ids>", "comma-separated source task ids")
+  .action((options: {
+    thread: string;
+    assignee: string;
+    title?: string;
+    test?: string;
+    source?: string;
+  }) => {
+    const instance = service();
+    try {
+      print(
+        instance.createIntegrationTask(options.thread, {
+          assignee: options.assignee,
+          title: options.title,
+          test_command: options.test,
+          source_task_ids: options.source
+            ? options.source.split(",").map((id) => id.trim()).filter(Boolean)
+            : undefined,
+        }),
+      );
+    } finally {
+      instance.close();
+    }
+  });
+
+program
   .command("review")
   .description("request an independent review and enqueue the task for merge")
   .requiredOption("--task <id>", "done task id")

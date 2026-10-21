@@ -68,6 +68,7 @@ const ALLOWED_TOOLS = [
   "company_plan_create",
   "company_task_assign_all",
   "company_run_ready",
+  "company_integration_create",
   "company_position_hire",
   "company_adapters",
   "company_metrics",
@@ -80,24 +81,29 @@ const ALLOWED_TOOLS = [
 const CEO_PROMPT = `You are the CEO of an AI company. You must use the ai-company MCP tools; do not edit code yourself.
 
 Repository: ${repo}
-Goal: run TWO rounds of work with two pi positions.
+Goal: run TWO rounds of work with two pi positions in ONE thread, then create and run an integration task.
 
 Round 1:
 - Hire pi-1 and pi-2 as harness_kind "pi", model "qianwenai/deepseek-v4.1-flash-1017", workspace "${repo}".
 - Create one task DAG (company_plan_create) titled "Round 1":
-  1. key "greet", assignee "pi-1": add export function greet(name) returning "Hello, <name>!" to hello.mjs, add a node:test case for greet("M1") === "Hello, M1!", keep existing tests.
-  2. key "shout", assignee "pi-2": add export function shout(text) returning text.toUpperCase() to hello.mjs, add a node:test case for shout("m1") === "M1", keep existing tests.
+  1. key "greet", assignee "pi-1": create greet.mjs exporting greet(name) returning "Hello, <name>!", create greet.test.mjs with a node:test case, keep existing files/tests.
+  2. key "shout", assignee "pi-2": create shout.mjs exporting shout(text) returning text.toUpperCase(), create shout.test.mjs with a node:test case.
   Both tasks: acceptance includes node --test passes; constraints { "test_command": "node --test" }; depends_on [].
 - Use the returned thread id with company_task_assign_all, then company_run_ready.
 
 Round 2:
-- Create a second task DAG titled "Round 2":
-  1. key "goodbye", assignee "pi-1": add goodbye(name) returning "Goodbye, <name>!" and a test.
-  2. key "whisper", assignee "pi-2": add whisper(text) returning text.toLowerCase() and a test.
+- Create a second task DAG titled "Round 2" with the SAME thread_id returned by Round 1:
+  1. key "goodbye", assignee "pi-1": create goodbye.mjs exporting goodbye(name) returning "Goodbye, <name>!" and goodbye.test.mjs.
+  2. key "whisper", assignee "pi-2": create whisper.mjs exporting whisper(text) returning text.toLowerCase() and whisper.test.mjs.
   Same constraints.
 - Assign and run it too.
 
-After both rounds, call company_status and company_inbox. Reply with a concise report: positions, task ids/statuses, whether node --test passed, and any risks. Do not ask the human questions.`;
+Integration:
+- Call company_integration_create { thread_id: <same thread id>, assignee: "pi-1", title: "Integrate round 1 and 2", test_command: "node --test" }.
+- Then company_task_assign_all with the thread id, and company_run_ready again.
+- Verify the integration task is done and node --test passes on the integrated branch.
+
+After that, call company_status and company_inbox. Reply with a concise report: positions, rounds, integration task, task ids/statuses, test result, and any risks. Do not ask the human questions.`;
 
 async function main(): Promise<void> {
   setupRepo();

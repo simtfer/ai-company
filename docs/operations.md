@@ -53,7 +53,36 @@ node bin/aic.mjs metrics
 - `company_task_retry` 可手动重试 failed/blocked 任务。
 - 超过重试次数仍失败，任务保持 failed，由 CEO 决定转派或升级。
 
-## 5. 独立评审与合并队列
+## 5. 多分支集成
+
+同一 thread 的多个任务各自在 `task/<id>` 分支完成后，用 integration 任务合并：
+
+```bash
+node bin/aic.mjs integration --thread th_... --assignee pi-1 --test "node --test"
+```
+
+MCP：
+
+```text
+company_integration_create {
+  "thread_id": "th_...",
+  "assignee": "pi-1",
+  "test_command": "node --test"
+}
+```
+
+然后正常 `company_task_assign_all` + `company_run_ready`。集成任务会：
+
+- 读取该 thread 中所有已完成任务的最新 report；
+- 按 source task 顺序执行 `git merge --no-ff <commit>`；
+- 把结果放到 `integration/<thread>`；
+- 在集成后的 worktree 里跑 `test_command`；
+- 产出 integration evidence 和最终 diff。
+
+如果合并冲突，任务 failed，报告里记录冲突文件和 source task；不会污染源分支。
+存在 integration 任务时，普通 source task 的 merge entry 不能直接 `approveMerge`，只能合并 integration 结果。
+
+## 6. 独立评审与合并队列
 
 任务完成后：
 
@@ -73,7 +102,7 @@ company_merge_reject { "entry_id": "mq_...", "reason": "..." }
 review task 不能由原任务作者担任，创建后会自动指派给 reviewer。review 任务 done 后，merge queue 从 `pending_review` 进入 `ready`。
 `company_merge_approve` 会在任务仓库存在且工作区干净时执行 `git merge --ff-only <commit>`，并记录 `merge_commit`；远程/符号仓库不可本地合并时只记录 `merged` 审计状态。
 
-## 6. 公司记忆检索
+## 7. 公司记忆检索
 
 ```bash
 node bin/aic.mjs memory pricing
@@ -81,7 +110,7 @@ node bin/aic.mjs memory pricing
 
 搜索员工手册、Position Memory 和 thread 摘要。
 
-## 7. 备份、恢复与日志
+## 8. 备份、恢复与日志
 
 ```bash
 node bin/aic.mjs backup --out D:\backups\ai-company.db
@@ -92,7 +121,7 @@ node bin/aic.mjs logs:prune --days 7
 备份使用 SQLite `VACUUM INTO`，是打开数据库时的 consistent snapshot。
 恢复会覆盖目标数据库；执行前先停止 Runtime。
 
-## 8. 服务化
+## 9. 服务化
 
 生成安装定义（不修改系统）：
 
@@ -111,7 +140,7 @@ node bin/aic.mjs service:uninstall --apply
 - Linux：写入 `/etc/systemd/system/*.service`，启用并启动。
 - M2 的 HTTP 没有内建 TLS；跨公网请放在 Tailscale/WireGuard 或反向代理后面。
 
-## 9. 实时权限桥（Claude SDK）
+## 10. 实时权限桥（Claude SDK）
 
 招聘 `harness_kind: "claude-sdk"` 的职位后，Claude 会在工具执行前调用 `canUseTool`：
 
@@ -132,8 +161,9 @@ node bin/aic.mjs decision:resolve <decision_id> 允许
 
 注意：如果 CEO 的 `company_run_ready` 调用正在阻塞，需要从 CLI/HTTP 侧批准；后续可把派工改成异步。
 
-## 10. 仍待补的 M4 项
+## 11. 仍待补的 M4 项
 
+- 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
 - pi/opencode 的原生实时 permission hook（当前只有执行前审批 + 工具白名单）。
 - 远程节点的 git 分支自动推送到共享 remote。
 - Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。

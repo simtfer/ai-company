@@ -375,6 +375,30 @@ export function buildMcpServer(service: CompanyService): McpServer {
   );
 
   server.registerTool(
+    "company_integration_create",
+    {
+      description:
+        "Create an integration task that merges completed task branches into integration/<thread>, runs tests and produces the final diff.",
+      inputSchema: {
+        thread_id: z.string().min(1),
+        assignee: z.string().min(1),
+        title: z.string().optional(),
+        test_command: z.string().optional(),
+        source_task_ids: z.array(z.string()).optional(),
+      },
+    },
+    async (args) =>
+      guarded(() =>
+        service.createIntegrationTask(args.thread_id, {
+          assignee: args.assignee,
+          title: args.title,
+          test_command: args.test_command,
+          source_task_ids: args.source_task_ids,
+        }),
+      ),
+  );
+
+  server.registerTool(
     "company_review_request",
     {
       description:

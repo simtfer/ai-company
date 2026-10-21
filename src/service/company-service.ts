@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   CreatePlanInputSchema,
@@ -361,6 +361,85 @@ export class CompanyService {
 
   // ---------- planning ----------
 
+  createIntegrationTask(
+    threadId: string,
+    input: {
+      title?: string;
+      assignee: string;
+      test_command?: string;
+      source_task_ids?: string[];
+    },
+  ): Task {
+    const thread = this.store.getThread(threadId);
+    if (!thread) throw new Error(`Thread not found: ${threadId}`);
+    const all = this.store.listTasks(MAIN_COMPANY_ID, threadId);
+    const sourceIds = input.source_task_ids?.length
+      ? input.source_task_ids
+      : all
+          .filter((task) => task.constraints.integration !== true)
+          .map((task) => task.id);
+    if (sourceIds.length === 0) {
+      throw new Error("Integration task needs at least one source task");
+    }
+    const sources = sourceIds.map((id) => {
+      const source = all.find((task) => task.id === id);
+      if (!source) throw new Error(`Source task not in thread: ${id}`);
+      return source;
+    });
+    const inheritedTest = sources
+      .map((task) => task.constraints.test_command)
+      .find((value): value is string => typeof value === "string");
+    const now = nowIso();
+    const task: Task = {
+      id: newId("t"),
+      company_id: MAIN_COMPANY_ID,
+      thread_id: thread.id,
+      parent_task_id: null,
+      task_key: `integration-${newId("k")}`,
+      title: input.title ?? `集成 ${thread.title}`,
+      objective: `把 ${sources.length} 个已完成任务的分支合并到 integration/${thread.id}，运行集成测试并产出最终 diff。`,
+      assignee: input.assignee,
+      status: "queued",
+      priority: 0,
+      acceptance: ["集成分支包含所有 source task", "集成测试通过"],
+      constraints: {
+        integration: true,
+        integration_source_task_ids: sources.map((source) => source.id),
+        ...(input.test_command ?? inheritedTest
+          ? { test_command: input.test_command ?? inheritedTest }
+          : {}),
+      },
+      inputs: [],
+      budget: {},
+      deadline: null,
+      attempts: 0,
+      max_retries: 0,
+      lease_owner: null,
+      lease_expires_at: null,
+      lease_token: null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.store.transaction(() => {
+      this.store.insertTask(task);
+      for (const source of sources) {
+        this.store.addTaskEdge(task.id, source.id);
+      }
+    });
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "integration.created",
+      payload: {
+        thread_id: thread.id,
+        source_task_ids: sources.map((source) => source.id),
+      },
+      created_at: nowIso(),
+    });
+    return task;
+  }
+
   createPlan(input: CreatePlanInput): PlanResult {
     const plan = CreatePlanInputSchema.parse(input);
     const keys = new Set<string>();
@@ -628,40 +707,48 @@ export class CompanyService {
     };
 
     let result: HarnessRunResult;
-    try {
-      const session = this.usableSession(position, adapter, workspace);
-      if (session?.session_id && adapter.resume) {
-        try {
-          result = await adapter.resume(session.session_id, runInput, eventSink);
-        } catch (error) {
-          if (!(error instanceof SessionExpiredError)) throw error;
-          this.recordRunEvent(runId, task.id, "session.fallback", {
-            session_id: session.session_id,
-            reason: error.message,
-          });
+    if (task.constraints.integration === true) {
+      try {
+        result = this.runIntegration(task, workspace, runInput, runId, eventSink);
+      } finally {
+        clearTimeout(timer);
+      }
+    } else {
+      try {
+        const session = this.usableSession(position, adapter, workspace);
+        if (session?.session_id && adapter.resume) {
+          try {
+            result = await adapter.resume(session.session_id, runInput, eventSink);
+          } catch (error) {
+            if (!(error instanceof SessionExpiredError)) throw error;
+            this.recordRunEvent(runId, task.id, "session.fallback", {
+              session_id: session.session_id,
+              reason: error.message,
+            });
+            result = await adapter.start(runInput, eventSink);
+          }
+        } else {
           result = await adapter.start(runInput, eventSink);
         }
-      } else {
-        result = await adapter.start(runInput, eventSink);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.recordHarnessEvent(runId, task.id, {
+          type: "error",
+          message,
+        });
+        result = {
+          report: reportFor(runInput, "failed", `${adapter.kind} 执行失败：${message}`, {
+            risks: [message],
+            next: ["由 CEO 决定重试或转派"],
+          }),
+          events: [{ type: "error", message }],
+          usage: {},
+          exit_code: null,
+          stderr: message,
+        };
+      } finally {
+        clearTimeout(timer);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.recordHarnessEvent(runId, task.id, {
-        type: "error",
-        message,
-      });
-      result = {
-        report: reportFor(runInput, "failed", `${adapter.kind} 执行失败：${message}`, {
-          risks: [message],
-          next: ["由 CEO 决定重试或转派"],
-        }),
-        events: [{ type: "error", message }],
-        usage: {},
-        exit_code: null,
-        stderr: message,
-      };
-    } finally {
-      clearTimeout(timer);
     }
 
     const test =
@@ -810,6 +897,198 @@ export class CompanyService {
       position: this.requirePosition(position.id),
       report: validated,
       run_id: runId,
+    };
+  }
+
+  private runIntegration(
+    task: Task,
+    workspace: PreparedWorkspace,
+    runInput: RunInput,
+    runId: string,
+    onEvent: (event: HarnessEvent) => void,
+  ): HarnessRunResult {
+    const events: HarnessEvent[] = [];
+    const emit = (event: HarnessEvent): void => {
+      events.push(event);
+      onEvent(event);
+    };
+    if (!workspace.is_git) {
+      return {
+        report: reportFor(
+          runInput,
+          "failed",
+          "集成任务需要 git 仓库和 worktree；当前 workspace 不是 git 仓库。",
+          { risks: ["integration requires git"], next: ["改为 git 仓库后重试"] },
+        ),
+        events,
+        usage: {},
+        exit_code: 1,
+        stderr: "integration requires git",
+      };
+    }
+
+    const explicit = Array.isArray(
+      task.constraints.integration_source_task_ids,
+    )
+      ? new Set(
+          (task.constraints.integration_source_task_ids as unknown[]).map(String),
+        )
+      : null;
+    const candidates = this.store
+      .listTasks(MAIN_COMPANY_ID, task.thread_id)
+      .filter(
+        (candidate) =>
+          candidate.id !== task.id &&
+          candidate.status === "done" &&
+          candidate.constraints.integration !== true &&
+          (!explicit || explicit.has(candidate.id)),
+      );
+    const merged: Array<{
+      task_id: string;
+      title: string;
+      commit: string;
+    }> = [];
+    const skipped: Array<{ task_id: string; title: string; reason: string }> =
+      [];
+
+    for (const source of candidates) {
+      const report = this.store.getLatestReportForTask(source.id);
+      if (!report) {
+        skipped.push({
+          task_id: source.id,
+          title: source.title,
+          reason: "no report",
+        });
+        continue;
+      }
+      const changes = Array.isArray(report.report.changes)
+        ? (report.report.changes as Array<Record<string, unknown>>)
+        : [];
+      const change = changes.find(
+        (entry) =>
+          typeof entry.repo === "string" &&
+          typeof entry.commit === "string" &&
+          resolve(entry.repo) === resolve(workspace.repo),
+      );
+      if (!change || typeof change.commit !== "string") {
+        skipped.push({
+          task_id: source.id,
+          title: source.title,
+          reason: "no commit in the integration repo",
+        });
+        continue;
+      }
+      if (merged.some((entry) => entry.commit === change.commit)) continue;
+      const merge = spawnSync(
+        "git",
+        ["merge", "--no-ff", "--no-edit", change.commit],
+        {
+          cwd: workspace.cwd,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 60_000,
+        },
+      );
+      if (merge.status !== 0) {
+        const conflicts = spawnSync(
+          "git",
+          ["diff", "--name-only", "--diff-filter=U"],
+          { cwd: workspace.cwd, encoding: "utf8", windowsHide: true },
+        );
+        spawnSync("git", ["merge", "--abort"], {
+          cwd: workspace.cwd,
+          encoding: "utf8",
+          windowsHide: true,
+        });
+        const files = (conflicts.stdout ?? "")
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const message = [
+          `集成任务 ${task.title} 合并 ${source.title} (${change.commit.slice(0, 8)}) 冲突。`,
+          files.length > 0 ? `冲突文件：${files.join(", ")}` : "",
+          (merge.stderr || merge.stdout || "").trim(),
+        ]
+          .filter(Boolean)
+          .join("\n");
+        emit({ type: "error", message });
+        return {
+          report: reportFor(runInput, "failed", message, {
+            evidence: [
+              {
+                kind: "integration",
+                git_merge: "conflict",
+                source_task_id: source.id,
+                commit: change.commit,
+                conflict_files: files,
+              },
+            ],
+            risks: ["合并冲突"],
+            next: ["由 CEO 指定冲突处理人，或改用 base_ref/串行依赖"],
+          }),
+          events,
+          usage: {},
+          exit_code: 1,
+          stderr: message,
+        };
+      }
+      merged.push({
+        task_id: source.id,
+        title: source.title,
+        commit: change.commit,
+      });
+      emit({
+        type: "status",
+        status: "merged",
+        message: `${source.title} → ${change.commit.slice(0, 8)}`,
+      });
+    }
+
+    if (merged.length === 0) {
+      const message =
+        "没有可合并的已完成任务分支；集成任务至少需要一个带 commit 的 source task。";
+      return {
+        report: reportFor(runInput, "failed", message, {
+          risks: ["no source branches"],
+          next: ["先完成依赖任务，或指定 integration_source_task_ids"],
+        }),
+        events,
+        usage: {},
+        exit_code: 1,
+        stderr: message,
+      };
+    }
+
+    const head = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace.cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    const summary = [
+      `已集成 ${merged.length} 个任务到 ${workspace.branch}。`,
+      ...merged.map((entry) => `- ${entry.title} (${entry.commit.slice(0, 8)})`),
+      skipped.length > 0
+        ? `跳过：${skipped.map((entry) => `${entry.title}（${entry.reason}）`).join("、")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return {
+      report: reportFor(runInput, "done", summary, {
+        evidence: [
+          {
+            kind: "integration",
+            branch: workspace.branch,
+            head: head.status === 0 ? head.stdout.trim() : null,
+            merged,
+            skipped,
+          },
+        ],
+        next: ["运行集成测试；通过后进入 merge queue"],
+      }),
+      events,
+      usage: {},
+      exit_code: 0,
     };
   }
 
@@ -1741,6 +2020,19 @@ export class CompanyService {
     if (entry.status !== "ready") {
       throw new Error(`Merge entry is ${entry.status}, expected ready`);
     }
+    const entryTask = this.store.getTask(entry.task_id);
+    if (!entryTask) throw new Error(`Task not found: ${entry.task_id}`);
+    const integration = this.store
+      .listTasks(MAIN_COMPANY_ID, entryTask.thread_id)
+      .find((task) => task.constraints.integration === true);
+    if (integration && integration.id !== entryTask.id) {
+      throw new Error(
+        `Thread has an integration task (${integration.id}); only the integration result can be merged`,
+      );
+    }
+    if (integration && integration.status !== "done") {
+      throw new Error(`Integration task is ${integration.status}, not done`);
+    }
     const mergeCommit = this.mergeEntry(entry);
     this.store.markMergeQueueMerged(entry.id, mergeCommit ?? entry.commit ?? "");
     this.store.insertEvent({
@@ -2086,7 +2378,16 @@ export class CompanyService {
       typeof task.constraints.base_ref === "string"
         ? task.constraints.base_ref
         : undefined;
-    return this.workspaceManager.prepare(baseRepo, task.id, baseRef);
+    const branchName =
+      task.constraints.integration === true
+        ? `integration/${task.thread_id}`
+        : undefined;
+    return this.workspaceManager.prepare(
+      baseRepo,
+      task.id,
+      baseRef,
+      branchName,
+    );
   }
 
   private timeoutForTask(task: Task): number {

@@ -14,7 +14,7 @@
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 29 个测试
+pnpm test          # 30 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -92,6 +92,7 @@ MCP 配置示例：
 - `max_retries` 自动重试 + `company_task_retry` 手动重试。
 - 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
 - `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
+- `company_integration_create` 把同一 thread 的多个已完成任务分支合入 `integration/<thread>`，合并后重跑全量测试。
 - **Claude SDK 实时权限桥**：`claude-sdk` 职位在工具执行前暂停，等待 `decision:resolve` 或 HTTP 审批。
 - `decision:list` / `decision:resolve <id> 允许|拒绝`。
 - `company_metrics`：任务、运行、耗时、token/成本、重试、节点、预算。

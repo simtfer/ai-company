@@ -1,25 +1,30 @@
-# Claude Code CEO × 两个 pi 职位：多轮任务实测
+# Claude Code CEO × 两个 pi 职位：多轮任务 + 集成实测
 
 - 日期：2026-10-21
 - 执行者：本机 Claude Code `2.1.304`（作为 CEO）
 - 员工：两个真实 `pi` `1.2.0` 职位
 - 模型：`qianwenai/deepseek-v4.1-flash-1017`
 - 测试脚本：`pnpm test:ceo-pi`
-- 测试目录：`.aic/ceo-pi-test/2026-10-21T10-11-06-965Z/`
+- 测试目录：`.aic/ceo-pi-test/2026-10-21T10-22-03-854Z/`
 
 ## 测试方式
 
 1. 创建独立 git 仓库，初始 `hello.mjs` + `hello.test.mjs`。
 2. 用独立 `AIC_DB_PATH` 启动 `ai-company` MCP stdio server。
-3. Claude Code 通过 MCP 工具招聘两个 `pi` 职位、创建两轮任务 DAG、派工并执行。
-4. 任务完成后，用 SQLite 读取公司状态并核对报告。
+3. Claude Code 作为 CEO，通过 MCP 工具：
+   - 招聘两个真实 `pi` 职位；
+   - 在同一个 thread 中连续创建 Round 1 / Round 2；
+   - 创建 integration 任务，把四个任务分支合并到 `integration/<thread>`；
+   - 在集成后的代码上运行 `node --test`。
+4. 任务完成后，用 SQLite 读取公司状态并独立复核集成分支。
 
-CEO system prompt 明确要求：
+CEO system prompt 要求：
 
 - 不自己写代码，只使用 `company_*` MCP 工具；
-- 第 1 轮：`pi-1` 加 `greet()`，`pi-2` 加 `shout()`；
-- 第 2 轮：`pi-1` 加 `goodbye()`，`pi-2` 加 `whisper()`；
-- 每轮都跑 `node --test`。
+- Round 1：`pi-1` 加 `greet()`，`pi-2` 加 `shout()`；
+- Round 2：`pi-1` 加 `goodbye()`，`pi-2` 加 `whisper()`；
+- 每个任务都跑 `node --test`；
+- 最后创建并运行 integration 任务。
 
 ## 结果
 
@@ -30,63 +35,86 @@ CEO system prompt 明确要求：
 | `pi-1` | `pi` | idle | 测试仓库 |
 | `pi-2` | `pi` | idle | 测试仓库 |
 
-### 两轮任务
+### 两轮 + 集成
 
-| 轮次 | 任务 | 负责人 | 状态 | 报告 |
-|---|---|---|---|---|
-| Round 1 | `Add greet()` | `pi-1` | done | done，2 tests passed |
-| Round 1 | `Add shout()` | `pi-2` | done | done，2 tests passed |
-| Round 2 | `Add goodbye()` | `pi-1` | done | done，2 tests passed |
-| Round 2 | `Add whisper()` | `pi-2` | done | done，2 tests passed |
+| 轮次 | 任务 | 负责人 | 状态 |
+|---|---|---|---|
+| Round 1 | `Add greet helper` | `pi-1` | done |
+| Round 1 | `Add shout helper` | `pi-2` | done |
+| Round 2 | `Add goodbye helper` | `pi-1` | done |
+| Round 2 | `Add whisper helper` | `pi-2` | done |
+| Integration | `Integrate round 1 and 2` | `pi-1` | done |
 
-- Thread：`Round 1` / `Round 2`
-- 任务总数：4
-- 完成率：4/4
-- 两轮均由同一个 CEO Claude Code 会话连续下发。
-- CEO 没有直接修改文件；只调用 MCP 工具和只读检查。
-- CEO 尝试使用 Bash 检查仓库时被权限拦截，这是预期边界。
+- Thread：`th_c4891b95f4f4`（单一 thread，Round 2 复用 Round 1 thread）
+- 任务总数：5
+- 完成率：5/5
+- 集成结果：4 个 source branch 全部合入，0 个跳过
+- 集成分支：`integration/th_c4891b95f4f4`，head `b7c5623`
+- 集成测试：`node --test`，**5/5 pass，exit 0**
+
+### 集成分支内容
+
+```text
+goodbye.mjs
+goodbye.test.mjs
+greet.mjs
+greet.test.mjs
+hello.mjs
+hello.test.mjs
+package.json
+shout.mjs
+shout.test.mjs
+whisper.mjs
+whisper.test.mjs
+```
+
+独立复核：
+
+```text
+✔ greet returns a greeting for a name
+✔ hello returns hello
+✔ shout uppercases text
+✔ whisper lowercases text
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+```
 
 ### 原始任务 ID
 
-- `t_3ea14f8b6824` Add greet() — pi-1
-- `t_acbc15242658` Add shout() — pi-2
-- `t_fd62640104b1` Add goodbye() — pi-1
-- `t_ade1c9d6e9d8` Add whisper() — pi-2
+- `t_6aed62317c55` Add greet helper — pi-1
+- `t_12fca91e6548` Add shout helper — pi-2
+- `t_144e64226134` Add goodbye helper — pi-1
+- `t_f5a451fbabbe` Add whisper helper — pi-2
+- `t_b684908db372` Integrate round 1 and 2 — pi-1
 
-## 发现的问题
+## 这次验证了什么
 
-### 1. 四个任务分支没有自动集成
+- Claude Code 可以作为 CEO，通过 MCP 连续调度多个真实 pi 职位。
+- 两个 pi 职位可以在同一 thread 中承接两轮任务。
+- CEO 能识别“任务完成但未集成”的问题，并创建 integration 任务。
+- integration 任务能按 source task 的 commit 把多个分支合入一条集成分支。
+- 合并后重新跑全量测试，而不是只看各任务自己的测试。
+- `company_merge_approve` 现在会阻止在存在 integration 任务时直接合并普通 source task。
 
-每个任务都在自己的 worktree / `task/<task_id>` 分支上基于 `main`：
+## 历史问题与修复
 
-- `task/t_3ea14f8b6824` 有 `greet()`
-- `task/t_acbc15242658` 有 `shout()`
-- `task/t_fd62640104b1` 有 `goodbye()`
-- `task/t_ade1c9d6e9d8` 有 `whisper()`
+第一次测试（`.aic/ceo-pi-test/2026-10-21T10-11-06-965Z/`）暴露了：
 
-`main` 仍是初始版本。四个功能分散在四个分支，没有一条分支同时包含全部功能。
+1. **四个任务分支没有自动集成**
+   每个任务都在自己的 `task/<id>` 分支上基于 `main`，`main` 仍是初始版本。
+   已通过新增 integration 任务解决。
 
-CEO 在最终报告里也正确指出了这个风险：任务都 done，但合并/集成未完成。
+2. **`AIC_DB_PATH` 没有被默认值读取**
+   MCP server 写入了默认 `.aic/company.db`，导致测试库为空、复用旧 workspace。
+   已修复：`DEFAULT_DB_PATH` 优先读取 `AIC_DB_PATH`。
 
-这是当前编排的真实缺口，不是 pi 执行失败：
+## 当前仍需注意
 
-- 任务级 worktree 隔离是对的；
-- 但 CEO 需要显式使用依赖、`base_ref` 或 merge queue 把结果串起来；
-- 目前 `company_merge_approve` 只能把一个 ready 分支 ff-only 合入本地 repo，不能自动把四个分支组合成一条集成分支。
-
-### 2. `AIC_DB_PATH` 没有被默认值读取
-
-第一次测试时 MCP server 忽略了 `AIC_DB_PATH`，写入了默认 `.aic/company.db`，导致测试库为空、`pi-1` 复用旧 workspace。
-
-已修复：`DEFAULT_DB_PATH` 现在优先读取 `AIC_DB_PATH`。
-
-### 3. CEO 会尝试执行 shell/读文件
-
-即使 system prompt 说“只使用公司工具”，CEO 仍尝试了 `Bash` 和 `Read`。
-
-- 当前 `--allowedTools` 只放行 `mcp__ai-company__*`，所以 shell 被拦截；
-- 这说明工具白名单是有效边界；
-- 但也说明 CEO prompt 需要持续强调“不要直接改代码”。
+- Thread 标题仍是 `Round 1`：Round 2 追加到同一 thread 后，thread 元数据没有更新。这是展示层问题。
+- CEO 尝试用 Bash/Git 独立检查仓库时仍会被权限拦截；它改用测试 artifact 和 diff 验证。这是预期边界。
+- 实时权限桥目前只覆盖 Claude SDK，pi/opencode 仍是执行前审批 + 工具白名单。
+- 远程节点的分支还没有自动推送到共享 remote。
 
 ## 可复现
 
@@ -94,20 +122,6 @@ CEO 在最终报告里也正确指出了这个风险：任务都 done，但合�
 pnpm test:ceo-pi
 ```
 
-该命令会：
-
-- 新建独立测试目录和 git 仓库；
-- 启动 MCP server；
-- 用真实 Claude Code 作为 CEO；
-- 招聘两个真实 pi 职位；
-- 跑两轮、四个任务；
-- 输出职位、任务、报告和 transcript 路径。
+该命令会新建独立测试目录和 git 仓库，启动 MCP server，用真实 Claude Code 作为 CEO，招聘两个真实 pi 职位，执行两轮任务和 integration，并输出状态与 transcript 路径。
 
 会产生真实模型费用，因此不放进默认 `pnpm test`。
-
-## 下一步建议
-
-1. 给 M4 增加“多分支集成”流程：CEO 创建 integration 任务，或 merge queue 支持按依赖顺序合并。
-2. 让 CEO 在第 2 轮任务上使用 `base_ref` 指向第 1 轮分支，避免每轮都从 `main` 开始。
-3. 给 CEO 增加只读工具集和更硬的“禁止直接编辑”边界。
-4. 把该测试纳入可选的 nightly，而不是每次 CI。

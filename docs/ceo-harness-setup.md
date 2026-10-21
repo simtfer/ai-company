@@ -108,6 +108,7 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_metrics` | 任务、运行、成本、重试、节点、merge queue 指标 |
 | `company_memory_search` | 搜索员工手册、Position Memory、thread |
 | `company_task_retry` | 手动重试 failed/blocked 任务 |
+| `company_integration_create` | 将同一 thread 的多个任务分支合入 integration 分支并跑集成测试 |
 | `company_review_request` | 创建独立 review task + merge queue |
 | `company_merge_queue` | 查看合并队列 |
 | `company_merge_approve` | 批准 ready 的合并条目 |
@@ -136,6 +137,7 @@ M4 质量与成本：
 
 - 派工前检查 `company_budget_status`；USD 或分钟预算耗尽都会硬停。
 - 任务可设置 `max_retries`；失败自动重试，也可 `company_task_retry`。
+- 多个任务完成后先 `company_integration_create` 合成 `integration/<thread>` 并跑全量测试；有集成任务时，普通任务不能直接 approve merge。
 - 完成后 `company_review_request` 创建独立 reviewer 任务并自动派工；review 通过后 `company_merge_approve` 会对本地 repo 执行 ff-only merge。
 - `company_metrics` 看成本/耗时/成功率；`company_memory_search` 检索历史决策。
 - `claude-sdk` 职位在工具执行前通过 `canUseTool` 暂停，CEO/人类用 `decision:resolve` 或 HTTP 批准；详见 [operations.md](operations.md)。

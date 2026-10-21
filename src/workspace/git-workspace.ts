@@ -46,6 +46,10 @@ function sanitize(value: string): string {
   return value.replaceAll(/[^a-zA-Z0-9._-]/g, "-");
 }
 
+function sanitizeBranch(value: string): string {
+  return value.replaceAll(/[^a-zA-Z0-9._/-]/g, "-");
+}
+
 export class GitWorkspaceManager {
   constructor(private readonly worktreeRoot = join(process.cwd(), ".aic", "worktrees")) {}
 
@@ -53,6 +57,7 @@ export class GitWorkspaceManager {
     baseRepo: string,
     taskId: string,
     baseRef?: string,
+    branchName?: string,
   ): PreparedWorkspace {
     const repoPath = resolve(baseRepo);
     mkdirSync(repoPath, { recursive: true });
@@ -67,7 +72,9 @@ export class GitWorkspaceManager {
       };
     }
     const repo = top.stdout.trim();
-    const branch = `task/${sanitize(taskId)}`;
+    const branch = branchName
+      ? sanitizeBranch(branchName)
+      : `task/${sanitize(taskId)}`;
     const cwd = join(this.worktreeRoot, sanitize(taskId));
     mkdirSync(this.worktreeRoot, { recursive: true });
 
