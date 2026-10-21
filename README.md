@@ -14,7 +14,7 @@
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 31 个测试
+pnpm test          # 32 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -95,6 +95,7 @@ MCP 配置示例：
 - 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
 - `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_integration_create` 把同一 thread 的多个已完成任务分支合入 `integration/<thread>`，合并后重跑全量测试。
+- 集成冲突会自动创建 integrator 任务，保留冲突 worktree；解决后自动重试 integration。
 - 远程节点可通过 `push_remote` 推送分支到共享 remote；集成前自动 fetch。
 - **实时权限桥**：`claude-sdk` 使用 `canUseTool`；`opencode-acp` 使用 ACP `session/request_permission`；`pi-live` 使用 pi 扩展 `tool_call` 钩子；工具执行前暂停，等待 `decision:resolve` 或 HTTP 审批。
 - `decision:list` / `decision:resolve <id> 允许|拒绝`。

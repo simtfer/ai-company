@@ -124,20 +124,21 @@
 - 实时权限桥：新增 `claude-sdk` 适配器，使用 Claude Agent SDK `canUseTool`；工具执行前写 decision，等待 `decision:resolve` / HTTP 审批；真实 Claude smoke test 创建文件成功。
 - 真实 CEO 集成：Claude Code `2.1.304` 作为 CEO，通过 MCP 调度两个真实 pi 职位，连续两轮 4 个任务全部 done、测试通过；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
 - 多分支集成：新增 `company_integration_create`；把同一 thread 的多个任务分支按顺序合入 `integration/<thread>`，合并后重跑全量测试；集成任务存在时，普通 source task 不能直接 approve merge。
+- 冲突自动处理：集成冲突时保留冲突 worktree，自动创建 integrator 任务；解决后自动把 integration 任务重新入队并重试。
 - 远程分支共享：节点可通过 `push_remote` 把任务分支推到共享 remote，报告记录 `remote` / `pushed_ref`；控制平面集成时自动 `git fetch --all --prune`。
 - opencode 实时权限：新增 `opencode-acp` 适配器，使用 ACP `session/request_permission`；真实 opencode 工具暂停并经 decision 批准后执行。
 - pi 实时权限：新增 `pi-live` 适配器，生成临时 pi 扩展监听 `tool_call`，通过本地审批 HTTP 端点暂停工具；真实 pi 工具暂停并经 decision 批准后执行。
 - 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:pi-live` 真实验证 `pi.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
 - 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
-- 测试：11 个测试文件、31 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
+- 测试：11 个测试文件、32 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
 - 真实 CEO + 集成实测：5/5 任务 done，4 个 source branch 全部合入，集成分支 `integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
 - M4 核心完成；剩余项：远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
 
 ## 下一步
 
-1. 增强集成冲突处理：冲突时自动生成冲突报告并派给专门 integrator。
-2. 远程共享 remote 的凭据托管与自动 push 默认策略。
-3. 线程标题在追加 Round 2 后更新。
+1. 远程共享 remote 的凭据托管与自动 push 默认策略。
+2. 线程标题在追加 Round 2 后更新。
+3. Windows NSSM/WinSW 原生服务模式。
 4. M3 IM/语音保持设计，等以后恢复。
 
 ## 阻塞与风险

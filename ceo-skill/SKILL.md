@@ -73,6 +73,7 @@ C. 先保留占位符
 - 派工前用 `company_budget_status` 检查公司/职位预算；预算不足时不要硬派。
 - 失败任务先看 `max_retries` 是否自动重试；需要人工重试时用 `company_task_retry`。
 - 多个并行任务完成后，先用 `company_integration_create` 合并到 `integration/<thread>` 并跑全量测试；不要只看单个任务 done。
+- 集成冲突会自动创建冲突处理任务；解决后 integration 会自动重试。冲突任务失败时再人工介入。
 - 完成后用 `company_review_request` 找独立 reviewer，不要用作者自己评审。
 - review 完成后 merge queue 进入 `ready`；只有 `ready` 才能 `company_merge_approve`。
 - 用 `company_metrics` 看成功率、耗时、token/成本和阻塞；用 `company_memory_search` 找历史决策。

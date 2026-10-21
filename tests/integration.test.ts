@@ -10,6 +10,39 @@ import {
 import { reportFor, type HarnessAdapter, type HarnessCapabilities, type RunInput } from "../src/adapters/types";
 import { CompanyService } from "../src/service/company-service";
 
+class ConflictAdapter implements HarnessAdapter {
+  readonly kind = "conflict-fake";
+
+  async probe(): Promise<HarnessCapabilities> {
+    return {
+      kind: this.kind,
+      supports_resume: false,
+      supports_streaming: false,
+      version: "test",
+    };
+  }
+
+  async start(input: RunInput) {
+    if (input.task.constraints.integration_conflict_of) {
+      writeFileSync(join(input.cwd, "shared.txt"), "A\nB\n");
+      return {
+        report: reportFor(input, "done", "conflict resolved"),
+        events: [],
+        usage: {},
+        exit_code: 0,
+      };
+    }
+    const value = input.task.task_key === "a" ? "A\n" : "B\n";
+    writeFileSync(join(input.cwd, "shared.txt"), value);
+    return {
+      report: reportFor(input, "done", `${input.task.title} done`),
+      events: [],
+      usage: {},
+      exit_code: 0,
+    };
+  }
+}
+
 class FileAdapter implements HarnessAdapter {
   readonly kind = "file-fake";
 
@@ -69,16 +102,76 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function hire(name: string): void {
+function hire(name: string, kind = "file-fake"): void {
   service.hirePosition({
     name,
     role: "engineer",
-    harness_kind: "file-fake",
+    harness_kind: kind,
     workspace: repo,
   });
 }
 
 describe("integration task", () => {
+  it("creates a conflict task and retries integration", async () => {
+    writeFileSync(join(repo, "shared.txt"), "base\n");
+    git(["add", "."]);
+    git(["commit", "-m", "shared base"]);
+    service.close();
+    service = new CompanyService({
+      dbPath: join(directory, "company.db"),
+      fakeDelayMs: 0,
+      adapters: [new ConflictAdapter()],
+    });
+    hire("dev-a", "conflict-fake");
+    hire("dev-b", "conflict-fake");
+    hire("integrator", "conflict-fake");
+    const plan = service.createPlan({
+      title: "conflict integration",
+      goal: "conflict",
+      tasks: [
+        {
+          key: "a",
+          title: "A",
+          objective: "write A",
+          acceptance: ["A"],
+          depends_on: [],
+          assignee: "dev-a",
+          priority: 1,
+        },
+        {
+          key: "b",
+          title: "B",
+          objective: "write B",
+          acceptance: ["B"],
+          depends_on: [],
+          assignee: "dev-b",
+          priority: 0,
+        },
+      ],
+    });
+    service.assignAll(plan.thread.id);
+    await service.runReady(plan.thread.id);
+    const integration = service.createIntegrationTask(plan.thread.id, {
+      assignee: "integrator",
+      test_command:
+        'node -e "const s=require(\'fs\').readFileSync(\'shared.txt\',\'utf8\'); if(!s.includes(\'A\')||!s.includes(\'B\')) process.exit(1)"',
+    });
+    service.assignTask(integration.id);
+    await service.runReady(plan.thread.id);
+
+    const conflict = service.store
+      .listTasks(MAIN_COMPANY_ID, plan.thread.id)
+      .find((task) => task.constraints.integration_conflict_of === integration.id);
+    expect(conflict?.status).toBe("done");
+    expect(service.store.getTask(integration.id)?.status).toBe("done");
+    expect(
+      git(["show", `integration/${plan.thread.id}:shared.txt`]),
+    ).toContain("A");
+    expect(
+      git(["show", `integration/${plan.thread.id}:shared.txt`]),
+    ).toContain("B");
+  });
+
   it("merges multiple task branches and only permits the integration result", async () => {
     hire("dev-a");
     hire("dev-b");

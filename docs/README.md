@@ -52,10 +52,10 @@ Node A / Node B（各台电脑上的 Position）
   - metrics、memory search、备份/恢复、日志清理、`bin/aic.mjs`。
   - `pnpm build:sea` 单文件可执行；`service:install` 生成/安装 Windows/Linux 服务。
   - 实时权限桥：`claude-sdk` 使用 `canUseTool`，`opencode-acp` 使用 ACP `session/request_permission`，`pi-live` 使用 pi 扩展 `tool_call`。
-- 验收证据：`pnpm test` 31 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+- 验收证据：`pnpm test` 32 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
 - 真实 CEO 集成：Claude Code 作为 CEO，两个 pi 职位完成两轮 4 个任务，并由集成任务合并为 `integration/<thread>`，5/5 测试通过；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
 - M3 IM/语音：⏸ 暂缓（以后做）。
-- 下一步：集成冲突 integrator、远程凭据托管，或恢复 M3。
+- 下一步：远程凭据托管、线程标题更新，或恢复 M3。
 
 ## 更新规则
 

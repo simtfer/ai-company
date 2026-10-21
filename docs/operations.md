@@ -80,6 +80,13 @@ company_integration_create {
 - 产出 integration evidence 和最终 diff。
 
 如果合并冲突，任务 failed，报告里记录冲突文件和 source task；不会污染源分支。
+控制平面会保留冲突 worktree，并自动创建一个冲突处理任务：
+
+- 复用 integration worktree（不新建分支）；
+- 负责人默认是 integration 的 assignee，也可用 `integration_conflict_assignee` 指定；
+- 解决并提交后，integration 任务自动重新入队并重试；
+- 如果冲突任务失败，integration 保持 failed，由 CEO 处理。
+
 存在 integration 任务时，普通 source task 的 merge entry 不能直接 `approveMerge`，只能合并 integration 结果。
 
 ## 6. 独立评审与合并队列
@@ -180,7 +187,6 @@ pi 扩展 tool_call
 
 ## 11. 仍待补的 M4 项
 
-- 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
 - 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
 - 远程共享 remote 的凭据托管与自动 push 默认策略。
 - Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。

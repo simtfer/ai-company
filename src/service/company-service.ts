@@ -440,6 +440,107 @@ export class CompanyService {
     return task;
   }
 
+  private createConflictTask(
+    integration: Task,
+    position: Position,
+    workspace: PreparedWorkspace,
+    conflict: { files: string[]; source_task_id: string; source_commit: string },
+  ): Task | null {
+    const existing = this.store
+      .listTasks(MAIN_COMPANY_ID, integration.thread_id)
+      .find(
+        (task) =>
+          task.constraints.integration_conflict_of === integration.id &&
+          ["queued", "assigned", "running"].includes(task.status),
+      );
+    if (existing) return existing;
+    const assignee =
+      typeof integration.constraints.integration_conflict_assignee === "string"
+        ? integration.constraints.integration_conflict_assignee
+        : integration.assignee;
+    if (!assignee) return null;
+    const now = nowIso();
+    const task: Task = {
+      id: newId("t"),
+      company_id: MAIN_COMPANY_ID,
+      thread_id: integration.thread_id,
+      parent_task_id: integration.id,
+      task_key: `conflict-${newId("k")}`,
+      title: `解决集成冲突：${integration.title}`,
+      objective: [
+        "集成任务保留了合并冲突状态。请解决冲突并保持双方意图。",
+        `冲突文件：${conflict.files.join(", ") || "未知"}`,
+        `source commit：${conflict.source_commit}`,
+        "解决后运行测试并提交；不要 abort merge。",
+      ].join("\n"),
+      assignee,
+      status: "queued",
+      priority: 10,
+      acceptance: ["冲突文件已解决", "集成测试通过"],
+      constraints: {
+        integration_conflict_of: integration.id,
+        reuse_worktree: workspace.cwd,
+        reuse_repo: workspace.repo,
+        reuse_branch: workspace.branch,
+        reuse_base_ref: workspace.base_ref,
+        conflict_files: conflict.files,
+        source_commit: conflict.source_commit,
+        source_task_id: conflict.source_task_id,
+        ...(typeof integration.constraints.test_command === "string"
+          ? { test_command: integration.constraints.test_command }
+          : {}),
+      },
+      inputs: [],
+      budget: {},
+      deadline: null,
+      attempts: 0,
+      max_retries: 0,
+      lease_owner: null,
+      lease_expires_at: null,
+      lease_token: null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.store.insertTask(task);
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "integration.conflict_task",
+      payload: {
+        integration_task_id: integration.id,
+        conflict_files: conflict.files,
+        source_task_id: conflict.source_task_id,
+        assignee,
+      },
+      created_at: nowIso(),
+    });
+    try {
+      return this.assignTask(task.id);
+    } catch {
+      return this.requireTask(task.id);
+    }
+  }
+
+  private requeueIntegration(integrationTaskId: string): void {
+    const integration = this.store.getTask(integrationTaskId);
+    if (!integration || integration.status !== "failed") return;
+    this.store.updateTaskStatus(integration.id, "queued");
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: integration.id,
+      type: "integration.retry_queued",
+      payload: { reason: "conflict resolution completed" },
+      created_at: nowIso(),
+    });
+    try {
+      this.assignTask(integration.id);
+    } catch {
+      // CEO can assign it manually if the position is still busy.
+    }
+  }
+
   createPlan(input: CreatePlanInput): PlanResult {
     const plan = CreatePlanInputSchema.parse(input);
     const keys = new Set<string>();
@@ -756,7 +857,19 @@ export class CompanyService {
         ? this.runTestCommand(task, workspace.cwd)
         : null;
     let finalized: WorkspaceResult;
-    try {
+    if (result.preserve_workspace) {
+      finalized = {
+        changes: [],
+        changed_files: [],
+        diff_path: null,
+        diff: "",
+      };
+      this.recordRunEvent(runId, task.id, "workspace.preserved", {
+        cwd: workspace.cwd,
+        branch: workspace.branch,
+        conflict_files: result.conflict?.files ?? [],
+      });
+    } else try {
       finalized = this.workspaceManager.finalize(workspace, task, runId);
     } catch (error) {
       finalized = {
@@ -807,6 +920,15 @@ export class CompanyService {
     this.enforceTaskBudget(task, runId);
     this.markReviewReady(task, validated);
     this.maybeAutoRetry(task, validated, position);
+    if (result.conflict) {
+      this.createConflictTask(task, position, workspace, result.conflict);
+    }
+    if (
+      validated.status === "done" &&
+      typeof task.constraints.integration_conflict_of === "string"
+    ) {
+      this.requeueIntegration(task.constraints.integration_conflict_of);
+    }
 
     if (validated.status === "needs_decision" && validated.decision) {
       this.store.insertDecision({
@@ -1022,11 +1144,6 @@ export class CompanyService {
           ["diff", "--name-only", "--diff-filter=U"],
           { cwd: workspace.cwd, encoding: "utf8", windowsHide: true },
         );
-        spawnSync("git", ["merge", "--abort"], {
-          cwd: workspace.cwd,
-          encoding: "utf8",
-          windowsHide: true,
-        });
         const files = (conflicts.stdout ?? "")
           .split(/\r?\n/)
           .map((line) => line.trim())
@@ -1057,6 +1174,12 @@ export class CompanyService {
           usage: {},
           exit_code: 1,
           stderr: message,
+          preserve_workspace: true,
+          conflict: {
+            files,
+            source_task_id: source.id,
+            source_commit: change.commit,
+          },
         };
       }
       merged.push({
@@ -2384,6 +2507,27 @@ export class CompanyService {
     position: Position,
     task: Task,
   ): PreparedWorkspace {
+    if (typeof task.constraints.reuse_worktree === "string") {
+      const cwd = task.constraints.reuse_worktree;
+      if (existsSync(cwd)) {
+        return {
+          cwd,
+          repo:
+            typeof task.constraints.reuse_repo === "string"
+              ? task.constraints.reuse_repo
+              : cwd,
+          branch:
+            typeof task.constraints.reuse_branch === "string"
+              ? task.constraints.reuse_branch
+              : "",
+          base_ref:
+            typeof task.constraints.reuse_base_ref === "string"
+              ? task.constraints.reuse_base_ref
+              : "",
+          is_git: true,
+        };
+      }
+    }
     if (
       position.harness_kind === "fake" ||
       position.policy.worktree === false

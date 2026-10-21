@@ -73,6 +73,13 @@ export interface HarnessRunResult {
   events: HarnessEvent[];
   exit_code?: number | null;
   stderr?: string;
+  /** Keep the worktree as-is (for example after a merge conflict). */
+  preserve_workspace?: boolean;
+  conflict?: {
+    files: string[];
+    source_task_id: string;
+    source_commit: string;
+  };
 }
 
 export interface HarnessAdapter {

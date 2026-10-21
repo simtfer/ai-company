@@ -260,7 +260,7 @@ interface HarnessAdapter {
 
 M1 实测：opencode `1.18.35` 使用 `run --format json`、`--session` 恢复；Claude Code `2.1.304` 使用 `-p --output-format stream-json`、`--resume`；pi `1.2.0` 使用 `-p --mode json`、`--session-id`。三者均完成真实 session 连续和代码修改验证。
 
-M4 新增 `claude-sdk`、`opencode-acp` 和 `pi-live` adapter：分别通过 `canUseTool`、ACP `session/request_permission` 和 pi 扩展 `tool_call` 在工具执行前暂停，创建 decision 并等待人类批准/拒绝。
+M4 新增 `claude-sdk`、`opencode-acp` 和 `pi-live` adapter：分别通过 `canUseTool`、ACP `session/request_permission` 和 pi 扩展 `tool_call` 在工具执行前暂停，创建 decision 并等待人类批准/拒绝。集成冲突会保留冲突 worktree 并自动创建 integrator 任务，解决后自动重试 integration。
 
 ### 7.3 职位生命周期
 
