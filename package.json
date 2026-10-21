@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "cli": "tsx src/cli.ts",
-    "mcp": "tsx src/mcp-server.ts",
+    "mcp": "tsx src/cli.ts mcp",
     "serve": "tsx src/cli.ts serve",
     "demo": "tsx src/cli.ts demo",
     "demo:opencode": "tsx src/cli.ts demo:opencode",
@@ -27,6 +27,8 @@
     "backup": "tsx src/cli.ts backup",
     "node:token": "tsx src/cli.ts node:token",
     "node:join": "tsx src/cli.ts node:join",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/aic.mjs",
+    "build:sea": "pnpm build && esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/aic.cjs && node --build-sea=sea-config.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"

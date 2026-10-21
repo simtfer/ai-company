@@ -27,13 +27,14 @@
 | M2 产物回传 | ✅ 已完成 | 测试文本 + diff 写入 `.aic/artifacts/remote-*` |
 | M2 节点管理 | ✅ 已完成 | enroll / list / drain / revoke |
 | M3 IM/语音 | ⏸ 暂缓 | 以后做，不阻塞 M4 |
-| M4 预算硬停 | ✅ 已完成 | 公司/职位/任务 USD 预算 |
+| M4 预算硬停 | ✅ 已完成 | 公司/职位/任务 USD + 分钟预算 |
 | M4 重试与升级 | ✅ 已完成 | 自动重试 + 手动 retry |
-| M4 评审与合并队列 | ✅ 已完成 | 独立 review task + merge queue |
+| M4 评审与合并队列 | ✅ 已完成 | 独立 review task 自动派工 + 真实 ff-only merge |
 | M4 指标与记忆 | ✅ 已完成 | metrics + memory search |
 | M4 备份与日志 | ✅ 已完成 | VACUUM INTO 备份、恢复、日志清理 |
-| M4 打包 | 🟡 部分完成 | `bin/aic.mjs` wrapper；单文件打包待做 |
-| M4 服务化 | 🟡 文档完成 | systemd/NSSM 示例；自动安装待做 |
+| M4 打包 | ✅ 已完成 | `pnpm build:sea` → `dist/aic.exe` |
+| M4 服务化 | ✅ 已完成 | Windows 计划任务 / Linux systemd 安装 |
+| M4 实时权限桥 | ⬜ 待补 | 当前仍是执行前审批 + 工具白名单 |
 
 ## 阶段状态
 
@@ -44,7 +45,7 @@
 | M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
 | M2 多电脑节点 | ✅ 已完成 | 2026-10-21 | 21 tests；`pnpm demo:multi-node`；两个 HTTP node agent |
 | M3 IM / 语音 | ⏸ 暂缓 | — | 按用户决定以后做 |
-| M4 质量与打包 | 🟡 核心完成 | 2026-10-21 | 26 tests；预算/重试/评审/指标/备份；运维文档 |
+| M4 质量与打包 | ✅ 核心完成 | 2026-10-21 | 28 tests；预算/重试/评审/指标/备份/SEA/服务化 |
 
 ## 变更日志
 
@@ -113,17 +114,20 @@
 - 数据模型：任务增加 attempts/max_retries；运行增加 tokens/cost_usd；新增 merge_queue。
 - 预算：公司/职位/任务三级 USD 预算；派工前硬停，任务超预算转 blocked。
 - 重试：失败任务按 `max_retries` 自动重试，支持 `company_task_retry` 手动重试。
-- 评审与合并队列：`company_review_request` 创建独立 review task 和 merge queue；review 完成后进入 ready，可 approve/reject。
+- 评审与合并队列：`company_review_request` 创建独立 review task 并自动派工；merge queue 支持 ready、ff-only git merge、reject。
 - 指标：`company_metrics` 返回任务状态、运行、平均耗时、token/成本、重试、节点、merge queue 和预算。
 - 记忆：`company_memory_search` 搜索员工手册、Position Memory 和 thread 摘要。
 - 运维：`backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`、`bin/aic.mjs` 入口、`docs/operations.md`。
-- 测试：9 个测试文件、26 个测试通过，新增预算硬停、自动重试、评审/合并、指标/记忆、备份恢复。
-- M4 核心完成；单文件打包、服务自动安装、分钟级预算硬停、真实 git merge、实时权限桥仍待补。
+- 打包：`pnpm build`（单文件 ESM）和 `pnpm build:sea`（当前平台 `dist/aic.exe`）。
+- 服务化：`service:install` 生成/安装 Windows 计划任务或 Linux systemd unit；`service:uninstall`。
+- 预算：分钟级公司/职位/任务预算也参与硬停；任务超时/超预算转 blocked。
+- 测试：9 个测试文件、28 个测试通过，新增分钟预算、真实 git merge 等。
+- M4 核心完成；剩余项：实时权限询问桥、远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
 
 ## 下一步
 
-1. 补 M4 剩余项：单文件打包、Windows 服务/Linux systemd 自动安装、分钟级预算、真实 git merge。
-2. 补 harness 工具执行中的实时权限询问桥。
+1. 补 harness 工具执行中的实时权限询问桥。
+2. 补远程节点 git 分支自动推送到共享 remote。
 3. M3 IM/语音保持设计，等以后恢复。
 4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 

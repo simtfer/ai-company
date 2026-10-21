@@ -12,7 +12,7 @@
 | M1 | 单机真实 harness 闭环 | ✅ 已完成 |
 | M2 | 多电脑节点 | ✅ 已完成 |
 | M3 | IM 与语音入口 | ⏸ 暂缓（以后做） |
-| M4 | 质量、成本与打包加固 | 🟡 核心完成 |
+| M4 | 质量、成本与打包加固 | ✅ 核心完成 |
 
 > M3（IM/语音）按用户决定暂缓，不作为 M4 的前置；主动推送能力等 M3 恢复后再补。
 
@@ -221,7 +221,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 
 ### 状态
 
-🟡 核心完成（2026-10-21）
+✅ 核心完成（2026-10-21）
 
 ### 目标
 
@@ -229,36 +229,43 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 
 ### 实际交付物
 
-- 任务/职位/公司三级 USD 预算；派工前硬停，单任务超预算转 blocked。
+- 任务/职位/公司三级 USD + 分钟预算；派工前硬停，单任务超预算转 blocked。
 - `max_retries` 自动重试 + `company_task_retry` 手动重试。
-- 独立 review task + merge queue（pending_review / ready / merged / rejected）。
+- 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
+- `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_metrics`：任务、运行、平均耗时、token/成本、重试、节点、merge queue、预算。
 - `company_memory_search`：员工手册、Position Memory、thread 摘要。
 - `backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`。
-- `bin/aic.mjs` 可执行入口。
-- `docs/operations.md`：预算、指标、评审、备份、Windows/Linux 服务化说明。
+- `pnpm build`（单文件 ESM）、`pnpm build:sea`（当前平台单文件 `dist/aic.exe`）。
+- `service:install` 生成/安装 Windows 计划任务或 Linux systemd unit。
+- `docs/operations.md`：预算、指标、评审、打包、备份、服务化说明。
 
 ### 验收证据
 
-- `pnpm test`：9 个测试文件、26 个测试通过。
-- 预算测试：公司预算为 0 时派工被 `BudgetExceededError` 硬停。
+- `pnpm test`：9 个测试文件、28 个测试通过。
+- 预算测试：公司 USD 预算为 0、分钟预算为 0 时派工被 `BudgetExceededError` 硬停。
 - 重试测试：失败任务自动重试一次，最终 failed，产生 2 份报告。
-- 评审测试：独立 review task + merge queue，review 完成后 ready，approve 后 merged。
+- 评审测试：独立 review task 自动派工 + merge queue，review 完成后 ready。
+- 真实 merge 测试：临时 git repo 上 `git merge --ff-only` 成功，文件内容更新。
 - 指标/记忆测试：metrics 有任务和预算数据；`playbook` 可检索到 Position Memory。
 - 备份测试：VACUUM INTO 后新 Store 能读回任务。
-- `node bin/aic.mjs --version`、`metrics`、`budget`、`backup` 已验证。
+- `pnpm build:sea` 生成 `dist/aic.exe`，`dist/aic.exe --version`、`budget`、`demo` 已验证。
+- `service:install --name ...` 生成 Windows 计划任务定义已验证。
 
 ### 验收
 
-- ✅ 预算超限会硬停，并可由 CEO 查询预算状态。
+- ✅ 预算超限（USD/分钟）会硬停，并可由 CEO 查询预算状态。
 - ✅ 失败任务支持自动/手动重试。
 - ✅ 合并队列能阻止未 ready 的变更被 approve。
+- ✅ 本地 repo 的 merge 会实际执行 `git merge --ff-only`。
+- ✅ reviewer 自动派工。
+- ✅ 单文件 SEA 打包。
+- ✅ Windows 计划任务 / Linux systemd 安装定义。
 - ✅ 卸载/升级不丢公司数据（SQLite 备份/恢复）。
 - ✅ 有可回放的审计事件和运行记录。
-- ⚠️ 单文件打包、Windows 服务/Linux systemd 自动安装尚未实现；当前是 wrapper + 文档。
-- ⚠️ 预算只硬性执行 USD；分钟级预算仍只作为 adapter 超时。
-- ⚠️ merge queue 的 `merged` 是审计状态，不会自动执行 git merge。
-- ⚠️ reviewer 自动派工、实时权限询问桥仍待补。
+- ⚠️ 实时权限询问桥仍未实现（当前是执行前审批 + 工具白名单）。
+- ⚠️ 远程 git 分支自动推送到共享 remote 仍待补。
+- ⚠️ Windows 当前是计划任务，不是 NSSM/WinSW 原生服务。
 
 ## 统一验收原则
 

@@ -274,6 +274,52 @@ program
   });
 
 program
+  .command("service:install")
+  .description("generate and optionally install a Windows scheduled task or systemd unit")
+  .option("--name <name>", "service/task name", "AI Company Runtime")
+  .option("--node <path>", "node executable path")
+  .option("--entry <path>", "aic entry path")
+  .option("--host <host>", "bind host", "0.0.0.0")
+  .option("--port <port>", "port", "4317")
+  .option("--db-path <path>", "AIC_DB_PATH for the service")
+  .option("--apply", "actually install the service")
+  .action(async (options: {
+    name: string;
+    node?: string;
+    entry?: string;
+    host: string;
+    port: string;
+    dbPath?: string;
+    apply?: boolean;
+  }) => {
+    const { installService } = await import("./service-manager");
+    print(
+      installService({
+        name: options.name,
+        nodePath: options.node,
+        entryPath: options.entry,
+        host: options.host,
+        port: Number(options.port),
+        dbPath: options.dbPath,
+        apply: options.apply,
+      }),
+    );
+  });
+
+program
+  .command("service:uninstall")
+  .description("print or apply service removal")
+  .option("--name <name>", "service/task name", "AI Company Runtime")
+  .option("--apply", "actually remove the service")
+  .action(async (options: { name: string; apply?: boolean }) => {
+    const { uninstallService } = await import("./service-manager");
+    print({
+      command: uninstallService(options.name, options.apply),
+      applied: Boolean(options.apply),
+    });
+  });
+
+program
   .command("node:token")
   .description("create a one-time node enrollment token")
   .option("--name <name>", "optional label")

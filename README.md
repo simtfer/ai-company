@@ -14,7 +14,7 @@
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 26 个测试
+pnpm test          # 28 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -41,6 +41,8 @@ pnpm cli metrics    # 任务/运行/成本/重试/节点指标
 pnpm cli budget     # 公司/职位预算
 pnpm cli backup --out D:\backups\ai-company.db
 pnpm cli restore --from D:\backups\ai-company.db
+pnpm build:sea      # 打包 dist/aic.exe（当前平台单文件）
+pnpm cli service:install --apply   # Windows 计划任务 / Linux systemd
 pnpm mcp            # 启动 MCP stdio server，供 CEO harness 调用
 pnpm serve          # 启动 HTTP API（默认 127.0.0.1:4317）
 pnpm serve --host 0.0.0.0 --port 4317   # 跨机器时绑定内网/Tailscale
@@ -82,12 +84,15 @@ MCP 配置示例：
 
 ## M4 已实现
 
-- 公司/职位/任务三级 USD 预算；派工前硬停。
+- 公司/职位/任务三级 USD + 分钟预算；派工前硬停。
 - `max_retries` 自动重试 + `company_task_retry` 手动重试。
-- 独立 review task + merge queue（pending_review / ready / merged / rejected）。
+- 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
+- `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_metrics`：任务、运行、耗时、token/成本、重试、节点、预算。
 - `company_memory_search`：员工手册、Position Memory、thread 摘要。
 - SQLite `VACUUM INTO` 备份、`restore`、`logs:prune`。
+- `pnpm build:sea` 生成当前平台单文件 `dist/aic.exe`。
+- `service:install` 生成/安装 Windows 计划任务或 Linux systemd unit。
 - `bin/aic.mjs` 入口和 [docs/operations.md](docs/operations.md)。
 
 ## M2 已实现

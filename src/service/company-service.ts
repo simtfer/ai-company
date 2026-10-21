@@ -1515,21 +1515,37 @@ export class CompanyService {
     const company = this.requireCompany();
     const companyLimit = this.numberBudget(company.budget.usd);
     const companySpend = this.store.companySpend();
+    const companyMinutesLimit = this.numberBudget(company.budget.minutes);
+    const companyMinutes = this.store.companyMinutes();
     return {
       company: {
         budget_usd: companyLimit,
         spent_usd: companySpend,
         remaining_usd:
           companyLimit === null ? null : Math.max(0, companyLimit - companySpend),
+        budget_minutes: companyMinutesLimit,
+        spent_minutes: companyMinutes,
+        remaining_minutes:
+          companyMinutesLimit === null
+            ? null
+            : Math.max(0, companyMinutesLimit - companyMinutes),
       },
       positions: this.store.listPositions().map((position) => {
         const limit = this.numberBudget(position.budget.usd);
         const spent = this.store.positionSpend(position.id);
+        const minuteLimit = this.numberBudget(position.budget.minutes);
+        const minutes = this.store.positionMinutes(position.id);
         return {
           name: position.name,
           budget_usd: limit,
           spent_usd: spent,
           remaining_usd: limit === null ? null : Math.max(0, limit - spent),
+          budget_minutes: minuteLimit,
+          spent_minutes: minutes,
+          remaining_minutes:
+            minuteLimit === null
+              ? null
+              : Math.max(0, minuteLimit - minutes),
         };
       }),
     };
@@ -1537,7 +1553,11 @@ export class CompanyService {
 
   setCompanyBudget(usd: number, minutes?: number): Record<string, unknown> {
     const company = this.requireCompany();
-    const budget = { ...company.budget, usd, ...(minutes ? { minutes } : {}) };
+    const budget = {
+      ...company.budget,
+      usd,
+      ...(minutes !== undefined ? { minutes } : {}),
+    };
     this.store.updateCompanyBudget(company.id, budget);
     return budget;
   }
@@ -1637,8 +1657,9 @@ export class CompanyService {
     const reviewerPosition = this.requirePositionByName(reviewer);
     const latestReport = this.store.getLatestReportForTask(task.id);
     const change = latestReport?.report.changes?.[0] as
-      | { branch?: unknown; commit?: unknown }
+      | { repo?: unknown; branch?: unknown; commit?: unknown }
       | undefined;
+    const repo = typeof change?.repo === "string" ? change.repo : null;
     const branch =
       typeof change?.branch === "string" ? change.branch : `task/${task.id}`;
     const commit =
@@ -1675,8 +1696,10 @@ export class CompanyService {
       company_id: MAIN_COMPANY_ID,
       task_id: task.id,
       review_task_id: reviewTask.id,
+      repo,
       branch,
       commit,
+      merge_commit: null,
       status: "pending_review" as const,
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -1694,7 +1717,8 @@ export class CompanyService {
       },
       created_at: nowIso(),
     });
-    return { review_task: reviewTask, merge_entry: entry };
+    const assignedReview = this.assignTask(reviewTask.id);
+    return { review_task: assignedReview, merge_entry: entry };
   }
 
   mergeQueue(
@@ -1709,16 +1733,60 @@ export class CompanyService {
     if (entry.status !== "ready") {
       throw new Error(`Merge entry is ${entry.status}, expected ready`);
     }
-    this.store.updateMergeQueueStatus(entry.id, "merged");
+    const mergeCommit = this.mergeEntry(entry);
+    this.store.markMergeQueueMerged(entry.id, mergeCommit ?? entry.commit ?? "");
     this.store.insertEvent({
       id: newId("e"),
       run_id: null,
       task_id: entry.task_id,
       type: "merge.approved",
-      payload: { entry_id: entry.id, branch: entry.branch, commit: entry.commit },
+      payload: {
+        entry_id: entry.id,
+        repo: entry.repo,
+        branch: entry.branch,
+        commit: entry.commit,
+        merge_commit: mergeCommit,
+      },
       created_at: nowIso(),
     });
-    return this.store.getMergeQueueEntry(entry.id) as unknown as Record<string, unknown>;
+    return this.store.getMergeQueueEntry(entry.id) as unknown as Record<
+      string,
+      unknown
+    >;
+  }
+
+  private mergeEntry(entry: MergeQueueEntry): string | null {
+    if (!entry.repo || !entry.commit) return null;
+    if (!existsSync(entry.repo)) {
+      // Remote/fake tasks may only have a symbolic repo. The queue still
+      // records the audit state, but there is nothing to merge locally.
+      return null;
+    }
+    const status = spawnSync("git", ["-C", entry.repo, "status", "--porcelain"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (status.status !== 0) {
+      throw new Error(`Not a git repo: ${entry.repo}`);
+    }
+    if (status.stdout.trim()) {
+      throw new Error(`Refusing to merge into a dirty repo: ${entry.repo}`);
+    }
+    const merge = spawnSync(
+      "git",
+      ["-C", entry.repo, "merge", "--ff-only", entry.commit],
+      { encoding: "utf8", windowsHide: true },
+    );
+    if (merge.status !== 0) {
+      throw new Error(
+        `git merge --ff-only failed: ${(merge.stderr || merge.stdout).trim()}`,
+      );
+    }
+    const head = spawnSync("git", ["-C", entry.repo, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    return head.status === 0 ? head.stdout.trim() : null;
   }
 
   rejectMerge(entryId: string, reason: string): Record<string, unknown> {
@@ -1745,10 +1813,28 @@ export class CompanyService {
         `Company budget exceeded: ${this.store.companySpend()} / ${companyLimit} USD`,
       );
     }
+    const companyMinutesLimit = this.numberBudget(company.budget.minutes);
+    if (
+      companyMinutesLimit !== null &&
+      this.store.companyMinutes() >= companyMinutesLimit
+    ) {
+      throw new BudgetExceededError(
+        `Company minute budget exceeded: ${this.store.companyMinutes().toFixed(1)} / ${companyMinutesLimit} min`,
+      );
+    }
     const positionLimit = this.numberBudget(position.budget.usd);
     if (positionLimit !== null && this.store.positionSpend(position.id) >= positionLimit) {
       throw new BudgetExceededError(
         `Position ${position.name} budget exceeded: ${this.store.positionSpend(position.id)} / ${positionLimit} USD`,
+      );
+    }
+    const positionMinutesLimit = this.numberBudget(position.budget.minutes);
+    if (
+      positionMinutesLimit !== null &&
+      this.store.positionMinutes(position.id) >= positionMinutesLimit
+    ) {
+      throw new BudgetExceededError(
+        `Position ${position.name} minute budget exceeded: ${this.store.positionMinutes(position.id).toFixed(1)} / ${positionMinutesLimit} min`,
       );
     }
     const taskLimit = this.numberBudget(task.budget.usd);
@@ -1757,17 +1843,31 @@ export class CompanyService {
         `Task ${task.id} budget exceeded: ${this.store.taskSpend(task.id)} / ${taskLimit} USD`,
       );
     }
+    const taskMinutesLimit = this.numberBudget(task.budget.minutes);
+    if (
+      taskMinutesLimit !== null &&
+      this.store.taskMinutes(task.id) >= taskMinutesLimit
+    ) {
+      throw new BudgetExceededError(
+        `Task ${task.id} minute budget exceeded: ${this.store.taskMinutes(task.id).toFixed(1)} / ${taskMinutesLimit} min`,
+      );
+    }
   }
 
   private enforceTaskBudget(task: Task, runId: string): void {
-    const limit = this.numberBudget(task.budget.usd);
-    if (limit === null) return;
+    const usdLimit = this.numberBudget(task.budget.usd);
+    const minutesLimit = this.numberBudget(task.budget.minutes);
     const spent = this.store.taskSpend(task.id);
-    if (spent > limit) {
+    const minutes = this.store.taskMinutes(task.id);
+    const usdExceeded = usdLimit !== null && spent > usdLimit;
+    const minutesExceeded = minutesLimit !== null && minutes > minutesLimit;
+    if (usdExceeded || minutesExceeded) {
       this.store.updateTaskStatus(task.id, "blocked");
       this.recordRunEvent(runId, task.id, "budget.exceeded", {
-        budget_usd: limit,
+        budget_usd: usdLimit,
         spent_usd: spent,
+        budget_minutes: minutesLimit,
+        spent_minutes: minutes,
       });
     }
   }

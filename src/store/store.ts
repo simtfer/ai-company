@@ -214,8 +214,10 @@ CREATE TABLE IF NOT EXISTS merge_queue (
   company_id TEXT NOT NULL,
   task_id TEXT NOT NULL,
   review_task_id TEXT,
+  repo TEXT,
   branch TEXT,
   commit_sha TEXT,
+  merge_commit TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -279,6 +281,8 @@ export class Store {
     this.ensureColumn("runs", "lease_token", "TEXT");
     this.ensureColumn("runs", "tokens", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("runs", "cost_usd", "REAL NOT NULL DEFAULT 0");
+    this.ensureColumn("merge_queue", "repo", "TEXT");
+    this.ensureColumn("merge_queue", "merge_commit", "TEXT");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -1004,6 +1008,31 @@ export class Store {
     return rows.map((row) => this.runFromRow(row));
   }
 
+  private runMinutes(run: Run): number {
+    if (!run.ended_at) return 0;
+    return Math.max(0, Date.parse(run.ended_at) - Date.parse(run.started_at)) / 60_000;
+  }
+
+  companyMinutes(companyId = MAIN_COMPANY_ID): number {
+    return this.listRunsForCompany(companyId).reduce(
+      (sum, run) => sum + this.runMinutes(run),
+      0,
+    );
+  }
+
+  positionMinutes(positionId: string): number {
+    return this.listRunsForCompany()
+      .filter((run) => run.position_id === positionId)
+      .reduce((sum, run) => sum + this.runMinutes(run), 0);
+  }
+
+  taskMinutes(taskId: string): number {
+    return this.listRunsForTask(taskId).reduce(
+      (sum, run) => sum + this.runMinutes(run),
+      0,
+    );
+  }
+
   companySpend(companyId = MAIN_COMPANY_ID): number {
     const row = this.db
       .prepare(
@@ -1166,16 +1195,19 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO merge_queue
-         (id, company_id, task_id, review_task_id, branch, commit_sha, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, company_id, task_id, review_task_id, repo, branch, commit_sha,
+          merge_commit, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         entry.id,
         entry.company_id,
         entry.task_id,
         entry.review_task_id,
+        entry.repo,
         entry.branch,
         entry.commit,
+        entry.merge_commit,
         entry.status,
         entry.created_at,
         entry.updated_at,
@@ -1207,6 +1239,14 @@ export class Store {
     this.db
       .prepare("UPDATE merge_queue SET status = ?, updated_at = ? WHERE id = ?")
       .run(status, nowIso(), id);
+  }
+
+  markMergeQueueMerged(id: string, mergeCommit: string): void {
+    this.db
+      .prepare(
+        "UPDATE merge_queue SET status = 'merged', merge_commit = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(mergeCommit, nowIso(), id);
   }
 
   setMergeQueueReviewTask(id: string, reviewTaskId: string): void {
@@ -1511,8 +1551,10 @@ export class Store {
       company_id: asString(row.company_id),
       task_id: asString(row.task_id),
       review_task_id: (row.review_task_id as string | null) ?? null,
+      repo: (row.repo as string | null) ?? null,
       branch: (row.branch as string | null) ?? null,
       commit: (row.commit_sha as string | null) ?? null,
+      merge_commit: (row.merge_commit as string | null) ?? null,
       status: asString(row.status) as MergeQueueEntry["status"],
       created_at: asString(row.created_at),
       updated_at: asString(row.updated_at),

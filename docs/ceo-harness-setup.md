@@ -134,11 +134,11 @@ M2 多节点说明：
 
 M4 质量与成本：
 
-- 派工前检查 `company_budget_status`；预算耗尽会硬停。
+- 派工前检查 `company_budget_status`；USD 或分钟预算耗尽都会硬停。
 - 任务可设置 `max_retries`；失败自动重试，也可 `company_task_retry`。
-- 完成后 `company_review_request` 创建独立 reviewer 任务和 merge queue；review 通过后 `company_merge_approve`。
+- 完成后 `company_review_request` 创建独立 reviewer 任务并自动派工；review 通过后 `company_merge_approve` 会对本地 repo 执行 ff-only merge。
 - `company_metrics` 看成本/耗时/成功率；`company_memory_search` 检索历史决策。
-- 备份/恢复、日志清理和服务化见 [operations.md](operations.md)。
+- 单文件打包 `pnpm build:sea`；服务安装 `service:install`；备份/恢复、日志清理见 [operations.md](operations.md)。
 
 ## 5. 安全边界
 

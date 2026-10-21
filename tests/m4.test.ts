@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   BudgetExceededError,
   CompanyService,
@@ -58,6 +66,16 @@ describe("M4 budgets, retries, review and operations", () => {
     );
   });
 
+  it("hard-stops dispatch when the minute budget is exhausted", async () => {
+    service.setCompanyBudget(50, 0);
+    const plan = simplePlan();
+    service.assignAll(plan.thread.id);
+
+    await expect(service.runReady(plan.thread.id)).rejects.toBeInstanceOf(
+      BudgetExceededError,
+    );
+  });
+
   it("automatically retries a failed task up to max_retries", async () => {
     const plan = simplePlan({
       max_retries: 1,
@@ -88,6 +106,47 @@ describe("M4 budgets, retries, review and operations", () => {
 
     const merged = service.approveMerge(review.merge_entry.id as string);
     expect(merged.status).toBe("merged");
+  });
+
+  it("fast-forward merges a ready branch into the local repo", () => {
+    const repo = join(directory, "merge-repo");
+    mkdirSync(repo, { recursive: true });
+    const git = (args: string[]) =>
+      execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+    git(["init", "-b", "main"]);
+    git(["config", "user.name", "Test"]);
+    git(["config", "user.email", "test@example.com"]);
+    writeFileSync(join(repo, "hello.txt"), "hello\n");
+    git(["add", "."]);
+    git(["commit", "-m", "initial"]);
+
+    git(["checkout", "-b", "task/merge-test"]);
+    writeFileSync(join(repo, "hello.txt"), "hello\nmerged\n");
+    git(["add", "."]);
+    git(["commit", "-m", "feature"]);
+    const commit = git(["rev-parse", "HEAD"]);
+    git(["checkout", "main"]);
+
+    const plan = simplePlan();
+    const entry = {
+      id: "mq_git_test",
+      company_id: "c_main",
+      task_id: plan.tasks[0].id,
+      review_task_id: null,
+      repo,
+      branch: "task/merge-test",
+      commit,
+      merge_commit: null,
+      status: "ready" as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    service.store.insertMergeQueue(entry);
+    const merged = service.approveMerge(entry.id);
+
+    expect(merged.status).toBe("merged");
+    expect(readFileSync(join(repo, "hello.txt"), "utf8")).toContain("merged");
+    expect(git(["log", "-1", "--pretty=%s"])).toBe("feature");
   });
 
   it("exposes metrics and memory search", async () => {

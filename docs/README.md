@@ -46,13 +46,13 @@ Node A / Node B（各台电脑上的 Position）
   - Node Agent 注册、心跳、claim、events、complete、租约续期。
   - 双节点远程派工、产物回传、租约过期重排、drain/revoke。
   - `pnpm demo:multi-node` 可本机模拟两台电脑。
-- M4 质量与打包：🟡 核心完成。
-  - 预算硬停、自动/手动重试、独立 review + merge queue。
+- M4 质量与打包：✅ 核心完成。
+  - USD + 分钟预算硬停、自动/手动重试、独立 review 自动派工、真实 git merge。
   - metrics、memory search、备份/恢复、日志清理、`bin/aic.mjs`。
-  - 单文件打包、服务自动安装、真实 git merge 仍待补。
-- 验收证据：`pnpm test` 26 passed、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+  - `pnpm build:sea` 单文件可执行；`service:install` 生成/安装 Windows/Linux 服务。
+- 验收证据：`pnpm test` 28 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
 - M3 IM/语音：⏸ 暂缓（以后做）。
-- 下一步：补 M4 剩余项，或恢复 M3。
+- 下一步：实时权限桥、远程 git 分支推送，或恢复 M3。
 
 ## 更新规则
 

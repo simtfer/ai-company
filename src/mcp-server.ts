@@ -1,4 +1,3 @@
-import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -502,14 +501,4 @@ export async function startMcpServer(dbPath?: string): Promise<void> {
   };
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());
-}
-
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  startMcpServer().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.stack : String(error));
-    process.exitCode = 1;
-  });
 }

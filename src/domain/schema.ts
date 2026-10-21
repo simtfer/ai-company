@@ -224,8 +224,10 @@ export interface MergeQueueEntry {
   company_id: string;
   task_id: string;
   review_task_id: string | null;
+  repo: string | null;
   branch: string | null;
   commit: string | null;
+  merge_commit: string | null;
   status: "pending_review" | "ready" | "merged" | "rejected";
   created_at: string;
   updated_at: string;

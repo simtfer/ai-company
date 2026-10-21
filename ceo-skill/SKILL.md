@@ -81,7 +81,7 @@ C. 先保留占位符
 
 - claude-code、pi、opencode 均已实机验证；三个 harness 的 session 连续和代码修改均已通过。
 - 当前审批是任务执行前闸门 + 工具白名单；harness 工具执行过程中的实时权限桥还未实现。
-- M4 的 merge queue `merged` 是审计状态，不会自动执行 git merge。
-- M4 只硬性执行 USD 预算；分钟级预算仍只是 adapter 超时。
+- merge queue 的 `company_merge_approve` 会在本地 repo 执行 `git merge --ff-only`；远程仓库不可用时只记录审计状态。
+- M4 的 USD 和分钟预算都硬性执行。
 - IM/语音（M3）已暂缓；任务完成后的主动推送尚无，在下次对话用 `company_inbox` 汇报。
 - 如果当前 CEO harness 不支持 MCP，可先用 `pnpm cli` 作为工具桥，但人类入口仍然是 CEO harness。
