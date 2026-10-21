@@ -33,6 +33,7 @@
     "test:watch": "vitest",
     "test:ceo-pi": "tsx scripts/ceo-pi-test.ts",
     "test:opencode-acp": "tsx scripts/opencode-acp-test.ts",
+    "test:pi-live": "tsx scripts/pi-live-test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -34,7 +34,7 @@
 | M4 备份与日志 | ✅ 已完成 | VACUUM INTO 备份、恢复、日志清理 |
 | M4 打包 | ✅ 已完成 | `pnpm build:sea` → `dist/aic.exe` |
 | M4 服务化 | ✅ 已完成 | Windows 计划任务 / Linux systemd 安装 |
-| M4 实时权限桥 | ✅ 已完成 | Claude SDK `canUseTool` + decision 审批 |
+| M4 实时权限桥 | ✅ 已完成 | Claude SDK `canUseTool` / opencode ACP / pi `tool_call` |
 
 ## 阶段状态
 
@@ -126,7 +126,8 @@
 - 多分支集成：新增 `company_integration_create`；把同一 thread 的多个任务分支按顺序合入 `integration/<thread>`，合并后重跑全量测试；集成任务存在时，普通 source task 不能直接 approve merge。
 - 远程分支共享：节点可通过 `push_remote` 把任务分支推到共享 remote，报告记录 `remote` / `pushed_ref`；控制平面集成时自动 `git fetch --all --prune`。
 - opencode 实时权限：新增 `opencode-acp` 适配器，使用 ACP `session/request_permission`；真实 opencode 工具暂停并经 decision 批准后执行。
-- 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
+- pi 实时权限：新增 `pi-live` 适配器，生成临时 pi 扩展监听 `tool_call`，通过本地审批 HTTP 端点暂停工具；真实 pi 工具暂停并经 decision 批准后执行。
+- 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:pi-live` 真实验证 `pi.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
 - 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
 - 测试：11 个测试文件、31 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
 - 真实 CEO + 集成实测：5/5 任务 done，4 个 source branch 全部合入，集成分支 `integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
@@ -134,9 +135,9 @@
 
 ## 下一步
 
-1. 评估 pi 的扩展/钩子能力，补 pi 实时权限桥。
-2. 增强集成冲突处理：冲突时自动生成冲突报告并派给专门 integrator。
-3. 远程共享 remote 的凭据托管与自动 push 默认策略。
+1. 增强集成冲突处理：冲突时自动生成冲突报告并派给专门 integrator。
+2. 远程共享 remote 的凭据托管与自动 push 默认策略。
+3. 线程标题在追加 Round 2 后更新。
 4. M3 IM/语音保持设计，等以后恢复。
 
 ## 阻塞与风险
@@ -146,6 +147,6 @@
 - 风险：集成任务已能合并多分支，但合并冲突时需要人工/专门 integrator 处理；当前会失败并记录冲突文件。
 - 风险：远程 git 分支目前留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 - 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
-- 风险：实时权限桥目前只覆盖 Claude SDK（`claude-sdk`）；pi/opencode 仍只能使用执行前审批 + 工具白名单。
+- 风险：`pi-live` 依赖 pi 扩展 API；pi 升级后需要重新验证扩展加载和 `tool_call` 钩子。
 - 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 暂缓，因此目前仍只能在下一次对话用 `company_inbox` 汇报增量。

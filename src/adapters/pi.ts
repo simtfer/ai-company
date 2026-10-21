@@ -1,5 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
 import type { Report } from "../domain/schema";
 import { findPiSpec } from "./discovery";
 import { harnessEnvironment } from "./env";
@@ -23,6 +27,8 @@ export interface PiAdapterOptions {
   tools?: string;
   defaultTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  kind?: string;
+  liveApproval?: boolean;
 }
 
 type AnyRecord = Record<string, unknown>;
@@ -58,15 +64,18 @@ function looksLikeExpiredSession(text: string): boolean {
 }
 
 export class PiAdapter implements HarnessAdapter {
-  readonly kind = "pi";
+  readonly kind: string;
   private readonly command: string;
   private readonly commandArgs: string[];
   private readonly model: string;
   private readonly tools: string;
   private readonly defaultTimeoutMs: number;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly liveApproval: boolean;
 
   constructor(options: PiAdapterOptions = {}) {
+    this.kind = options.kind ?? "pi";
+    this.liveApproval = options.liveApproval === true;
     const spec = findPiSpec();
     this.command = options.command ?? spec?.command ?? "pi";
     this.commandArgs = options.commandArgs ?? spec?.argsPrefix ?? [];
@@ -118,6 +127,102 @@ export class PiAdapter implements HarnessAdapter {
     return this.run(sessionId, input, onEvent);
   }
 
+  private async startApprovalBridge(
+    input: RunInput,
+    emit: (event: HarnessEvent) => void,
+  ): Promise<{
+    url: string;
+    token: string;
+    extensionPath: string;
+    close: () => Promise<void>;
+  }> {
+    const token = randomBytes(16).toString("hex");
+    const server = createServer(async (request, response) => {
+      if (
+        request.method !== "POST" ||
+        request.headers["x-aic-token"] !== token
+      ) {
+        response.writeHead(403).end("forbidden");
+        return;
+      }
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      try {
+        const body = JSON.parse(raw) as {
+          tool_name?: unknown;
+          input?: unknown;
+        };
+        const name = asString(body.tool_name) ?? "tool";
+        const toolInput = asRecord(body.input) ?? {};
+        emit({
+          type: "approval_request",
+          action: name,
+          risk: toolRisk(name),
+          details: { tool_name: name, input: toolInput },
+        });
+        const decision = input.approval_handler
+          ? await input.approval_handler({ tool_name: name, input: toolInput })
+          : { allow: true };
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            allow: decision.allow,
+            reason: decision.message ?? "",
+          }),
+        );
+      } catch (error) {
+        response.writeHead(500).end(String(error));
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const address = server.address() as AddressInfo;
+    const dir = join(process.cwd(), ".aic", "extensions");
+    mkdirSync(dir, { recursive: true });
+    const extensionPath = join(
+      dir,
+      `pi-approval-${input.run_id.replaceAll(/[^a-zA-Z0-9._-]/g, "-")}.mjs`,
+    );
+    writeFileSync(
+      extensionPath,
+      `export default function (pi) {
+  pi.on("tool_call", async (event) => {
+    const url = process.env.AIC_PI_APPROVAL_URL;
+    const token = process.env.AIC_PI_APPROVAL_TOKEN || "";
+    if (!url) return;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-aic-token": token },
+        body: JSON.stringify({ tool_name: event.toolName, input: event.input }),
+      });
+      if (!response.ok) {
+        return { block: true, reason: "AI Company approval bridge rejected the request" };
+      }
+      const body = await response.json();
+      if (!body.allow) {
+        return { block: true, reason: body.reason || "Denied by AI Company policy" };
+      }
+    } catch (error) {
+      return { block: true, reason: "AI Company approval bridge unavailable: " + String(error) };
+    }
+  });
+}
+`,
+      "utf8",
+    );
+    return {
+      url: `http://127.0.0.1:${address.port}/approve`,
+      token,
+      extensionPath,
+      close: () =>
+        new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        }),
+    };
+  }
+
   private async run(
     sessionId: string,
     input: RunInput,
@@ -158,9 +263,27 @@ export class PiAdapter implements HarnessAdapter {
     };
     emit({ type: "status", status: "starting", message: `pi ${model}` });
 
-    const result = await runJsonlProcess(this.command, args, {
+    const bridge =
+      this.liveApproval && input.approval_handler
+        ? await this.startApprovalBridge(input, emit)
+        : null;
+    if (bridge) {
+      args.splice(args.length - 1, 0, "--extension", bridge.extensionPath);
+    }
+
+    let result: Awaited<ReturnType<typeof runJsonlProcess>>;
+    try {
+      result = await runJsonlProcess(this.command, args, {
       cwd: input.cwd,
-      env: this.env,
+      env: {
+        ...this.env,
+        ...(bridge
+          ? {
+              AIC_PI_APPROVAL_URL: bridge.url,
+              AIC_PI_APPROVAL_TOKEN: bridge.token,
+            }
+          : {}),
+      },
       timeoutMs:
         input.timeout_ms ??
         (input.task.budget.minutes
@@ -250,6 +373,9 @@ export class PiAdapter implements HarnessAdapter {
         }
       },
     });
+    } finally {
+      await bridge?.close();
+    }
 
     if (
       result.code !== 0 &&

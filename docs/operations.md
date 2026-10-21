@@ -140,10 +140,11 @@ node bin/aic.mjs service:uninstall --apply
 - Linux：写入 `/etc/systemd/system/*.service`，启用并启动。
 - M2 的 HTTP 没有内建 TLS；跨公网请放在 Tailscale/WireGuard 或反向代理后面。
 
-## 10. 实时权限桥（Claude SDK / opencode ACP）
+## 10. 实时权限桥（Claude SDK / opencode ACP / pi）
 
 招聘 `harness_kind: "claude-sdk"` 的职位时，Claude 在工具执行前调用 `canUseTool`。
 招聘 `harness_kind: "opencode-acp"` 的职位时，opencode 通过 ACP `session/request_permission` 请求权限。
+招聘 `harness_kind: "pi-live"` 的职位时，pi 通过扩展的 `tool_call` 钩子请求权限。
 
 流程相同：
 
@@ -164,11 +165,24 @@ node bin/aic.mjs decision:resolve <decision_id> 允许
 
 opencode ACP 会通过 `OPENCODE_CONFIG_CONTENT` 注入 `permission.bash/edit/webfetch = "ask"`，因此 ACP 才会发出 permission 请求。
 
+pi 的 `pi-live` adapter 会为每次 Run 启动一个只监听 `127.0.0.1` 的审批 HTTP 端点，并生成一个临时 pi 扩展：
+
+```text
+pi 扩展 tool_call
+  → POST 审批端点（带 per-run token）
+  → 控制平面 decision
+  → allow / block
+```
+
+扩展文件写入 `.aic/extensions/`，run 结束后审批服务器关闭。
+
 注意：如果 CEO 的 `company_run_ready` 调用正在阻塞，需要从 CLI/HTTP 侧批准；后续可把派工改成异步。
 
 ## 11. 仍待补的 M4 项
 
 - 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
-- pi 的原生实时 permission hook（Claude SDK、opencode ACP 已支持；pi 仍只有执行前审批 + 工具白名单）。
+- 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
+- 远程共享 remote 的凭据托管与自动 push 默认策略。
+- Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。
 - 远程共享 remote 的凭据托管与自动 push 默认策略（当前用 `push_remote` 显式开启）。
 - Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。

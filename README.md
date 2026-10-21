@@ -28,6 +28,7 @@ pnpm demo:opencode    # opencode dev + QA 闭环
 pnpm demo:multi-node  # 两个 Node Agent 远程执行
 pnpm test:ceo-pi      # Claude Code CEO × 两个真实 pi 职位，多轮任务
 pnpm test:opencode-acp # opencode ACP 实时权限桥
+pnpm test:pi-live     # pi tool_call 实时权限桥
 ```
 
 其他命令：
@@ -95,7 +96,7 @@ MCP 配置示例：
 - `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_integration_create` 把同一 thread 的多个已完成任务分支合入 `integration/<thread>`，合并后重跑全量测试。
 - 远程节点可通过 `push_remote` 推送分支到共享 remote；集成前自动 fetch。
-- **实时权限桥**：`claude-sdk` 使用 `canUseTool`；`opencode-acp` 使用 ACP `session/request_permission`；工具执行前暂停，等待 `decision:resolve` 或 HTTP 审批。
+- **实时权限桥**：`claude-sdk` 使用 `canUseTool`；`opencode-acp` 使用 ACP `session/request_permission`；`pi-live` 使用 pi 扩展 `tool_call` 钩子；工具执行前暂停，等待 `decision:resolve` 或 HTTP 审批。
 - `decision:list` / `decision:resolve <id> 允许|拒绝`。
 - `company_metrics`：任务、运行、耗时、token/成本、重试、节点、预算。
 - `company_memory_search`：员工手册、Position Memory、thread 摘要。
@@ -144,4 +145,3 @@ MCP 配置示例：
 
 - IM / 语音：M3 暂缓，以后再做。
 - Web 聊天界面。
-- pi/opencode 的原生实时权限桥（Claude SDK 已支持；其余仍是执行前审批 + 工具白名单）。

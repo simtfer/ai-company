@@ -113,8 +113,8 @@ whisper.test.mjs
 
 - Thread 标题仍是 `Round 1`：Round 2 追加到同一 thread 后，thread 元数据没有更新。这是展示层问题。
 - CEO 尝试用 Bash/Git 独立检查仓库时仍会被权限拦截；它改用测试 artifact 和 diff 验证。这是预期边界。
-- 实时权限桥目前只覆盖 Claude SDK，pi/opencode 仍是执行前审批 + 工具白名单。
-- 远程节点的分支还没有自动推送到共享 remote。
+- 实时权限桥已覆盖 Claude SDK、opencode ACP、pi-live；本报告主要验证 pi 普通模式。
+- 远程节点已支持 `push_remote` 推送到共享 remote；默认策略仍需显式开启。
 
 ## 可复现
 

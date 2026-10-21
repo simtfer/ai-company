@@ -36,6 +36,9 @@ export function createRealAdapters(): RealAdapterSet {
     adapters.push(new ClaudeCodeAdapter());
     adapters.push(new ClaudeSdkAdapter());
   }
-  if (discovered.pi) adapters.push(new PiAdapter());
+  if (discovered.pi) {
+    adapters.push(new PiAdapter());
+    adapters.push(new PiAdapter({ kind: "pi-live", liveApproval: true }));
+  }
   return { adapters, discovered };
 }

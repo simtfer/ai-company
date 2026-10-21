@@ -101,7 +101,7 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_node_enroll` | 创建一次性节点注册令牌 |
 | `company_node_drain` | 排空节点，停止接收新任务 |
 | `company_node_revoke` | 撤销节点 token |
-| `company_adapters` | 探测 fake / claude-code / claude-sdk / pi / opencode / opencode-acp 适配器能力 |
+| `company_adapters` | 探测 fake / claude-code / claude-sdk / pi / pi-live / opencode / opencode-acp 适配器能力 |
 | `company_budget_status` | 公司/职位预算与花费 |
 | `company_set_company_budget` | 设置公司 USD 预算 |
 | `company_set_position_budget` | 设置职位 USD 预算 |
@@ -117,7 +117,7 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 
 M1 真实执行说明：
 
-- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "opencode" | "opencode-acp"` 的职位，`workspace` 指向一个 git 仓库。`claude-sdk` 和 `opencode-acp` 支持工具执行中的实时人工审批。
+- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "pi-live" | "opencode" | "opencode-acp"` 的职位，`workspace` 指向一个 git 仓库。`claude-sdk`、`opencode-acp`、`pi-live` 支持工具执行中的实时人工审批。
 - 本机会自动发现：nvm 中的 Claude Code、WorkBuddy 内置的 pi、scoop 的 opencode；也可用 `AIC_CLAUDE_COMMAND` / `AIC_PI_COMMAND` / `AIC_OPENCODE_COMMAND` 覆盖。
 - 任务会使用独立 worktree；`constraints.test_command` 会在任务完成后执行并写入证据。
 - `constraints.requires_approval: true` 会让任务先进入 `waiting_approval`，由 CEO 生成决策卡，人类批准后才执行。
@@ -140,7 +140,7 @@ M4 质量与成本：
 - 多个任务完成后先 `company_integration_create` 合成 `integration/<thread>` 并跑全量测试；有集成任务时，普通任务不能直接 approve merge。
 - 完成后 `company_review_request` 创建独立 reviewer 任务并自动派工；review 通过后 `company_merge_approve` 会对本地 repo 执行 ff-only merge。
 - `company_metrics` 看成本/耗时/成功率；`company_memory_search` 检索历史决策。
-- `claude-sdk` 职位在工具执行前通过 `canUseTool` 暂停，CEO/人类用 `decision:resolve` 或 HTTP 批准；详见 [operations.md](operations.md)。
+- `claude-sdk` / `opencode-acp` / `pi-live` 职位在工具执行前暂停，CEO/人类用 `decision:resolve` 或 HTTP 批准；详见 [operations.md](operations.md)。
 - 单文件打包 `pnpm build:sea`；服务安装 `service:install`；备份/恢复、日志清理见 [operations.md](operations.md)。
 - 已实测 Claude Code CEO 通过 MCP 调度两个真实 pi 职位完成两轮 4 个任务，见 [ceo-pi-test.md](ceo-pi-test.md)。
 
