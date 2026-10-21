@@ -240,7 +240,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - `backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`。
 - `pnpm build`（单文件 ESM）、`pnpm build:sea`（当前平台单文件 `dist/aic.exe`）。
 - `service:install` 生成/安装 Windows 计划任务或 Linux systemd unit。
-- Claude SDK 实时权限桥：`claude-sdk` 使用 `canUseTool`，工具执行前创建 decision，等待 `decision:resolve` / HTTP 审批。
+- 实时权限桥：`claude-sdk` 使用 `canUseTool`；`opencode-acp` 使用 ACP `session/request_permission`，工具执行前创建 decision。
 - `docs/operations.md`：预算、指标、评审、打包、备份、服务化说明。
 
 ### 验收证据
@@ -260,6 +260,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 多分支集成测试：临时 git repo 上合并两个独立任务分支，集成分支同时包含两个文件，集成测试通过；source task 被禁止直接 approve。
 - 真实 CEO 集成复测：同一 thread 两轮 4 个任务 + 1 个 integration 任务全部 done；`integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
 - 共享 remote 测试：任务分支 push 到 bare remote，remote ref 与本地 commit 一致。
+- opencode ACP 实测：`session/request_permission` 暂停 Bash，人类批准后创建 `acp.txt`，内容 `ACP_OK`。
 
 ### 验收
 
@@ -275,8 +276,9 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - ✅ 多分支集成：同一 thread 的已完成任务可合并到 integration 分支并重跑测试。
 - ✅ 有集成任务时，普通 source task 不能绕过集成直接 approve merge。
 - ✅ 远程节点可把分支 push 到共享 remote，集成前自动 fetch。
-- ✅ Claude SDK 工具执行中的实时权限桥（暂停 → 人类 decision → 继续）。
-- ⚠️ pi/opencode 仍只有执行前审批 + 工具白名单，没有原生实时 permission hook。
+- ✅ Claude SDK 工具执行中的实时权限桥（`canUseTool`）。
+- ✅ opencode ACP 实时权限桥（`session/request_permission`）。
+- ⚠️ pi 仍只有执行前审批 + 工具白名单，没有原生实时 permission hook。
 - ⚠️ 远程 git 分支自动推送到共享 remote 仍待补。
 - ⚠️ Windows 当前是计划任务，不是 NSSM/WinSW 原生服务。
 

@@ -76,7 +76,7 @@ C. 先保留占位符
 - 完成后用 `company_review_request` 找独立 reviewer，不要用作者自己评审。
 - review 完成后 merge queue 进入 `ready`；只有 `ready` 才能 `company_merge_approve`。
 - 用 `company_metrics` 看成功率、耗时、token/成本和阻塞；用 `company_memory_search` 找历史决策。
-- 需要工具级实时审批时，招聘 `harness_kind: "claude-sdk"`；工具会暂停并生成 decision，用 `decision:resolve` 或 HTTP 批准。
+- 需要工具级实时审批时，招聘 `harness_kind: "claude-sdk"` 或 `"opencode-acp"`；工具会暂停并生成 decision，用 `decision:resolve` 或 HTTP 批准。
 - 备份/恢复和日志清理见 `docs/operations.md`。
 
 ## 当前限制

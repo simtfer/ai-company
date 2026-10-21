@@ -125,6 +125,8 @@
 - 真实 CEO 集成：Claude Code `2.1.304` 作为 CEO，通过 MCP 调度两个真实 pi 职位，连续两轮 4 个任务全部 done、测试通过；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
 - 多分支集成：新增 `company_integration_create`；把同一 thread 的多个任务分支按顺序合入 `integration/<thread>`，合并后重跑全量测试；集成任务存在时，普通 source task 不能直接 approve merge。
 - 远程分支共享：节点可通过 `push_remote` 把任务分支推到共享 remote，报告记录 `remote` / `pushed_ref`；控制平面集成时自动 `git fetch --all --prune`。
+- opencode 实时权限：新增 `opencode-acp` 适配器，使用 ACP `session/request_permission`；真实 opencode 工具暂停并经 decision 批准后执行。
+- 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
 - 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
 - 测试：11 个测试文件、31 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
 - 真实 CEO + 集成实测：5/5 任务 done，4 个 source branch 全部合入，集成分支 `integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
@@ -132,7 +134,7 @@
 
 ## 下一步
 
-1. 评估是否把实时权限桥扩展到 pi/opencode（当前仅 Claude SDK 支持原生 canUseTool）。
+1. 评估 pi 的扩展/钩子能力，补 pi 实时权限桥。
 2. 增强集成冲突处理：冲突时自动生成冲突报告并派给专门 integrator。
 3. 远程共享 remote 的凭据托管与自动 push 默认策略。
 4. M3 IM/语音保持设计，等以后恢复。

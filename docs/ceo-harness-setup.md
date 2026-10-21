@@ -101,7 +101,7 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 | `company_node_enroll` | 创建一次性节点注册令牌 |
 | `company_node_drain` | 排空节点，停止接收新任务 |
 | `company_node_revoke` | 撤销节点 token |
-| `company_adapters` | 探测 fake / claude-code / claude-sdk / pi / opencode 适配器能力 |
+| `company_adapters` | 探测 fake / claude-code / claude-sdk / pi / opencode / opencode-acp 适配器能力 |
 | `company_budget_status` | 公司/职位预算与花费 |
 | `company_set_company_budget` | 设置公司 USD 预算 |
 | `company_set_position_budget` | 设置职位 USD 预算 |
@@ -117,7 +117,7 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 
 M1 真实执行说明：
 
-- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "opencode"` 的职位，`workspace` 指向一个 git 仓库。`claude-sdk` 支持工具执行中的实时人工审批。
+- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "opencode" | "opencode-acp"` 的职位，`workspace` 指向一个 git 仓库。`claude-sdk` 和 `opencode-acp` 支持工具执行中的实时人工审批。
 - 本机会自动发现：nvm 中的 Claude Code、WorkBuddy 内置的 pi、scoop 的 opencode；也可用 `AIC_CLAUDE_COMMAND` / `AIC_PI_COMMAND` / `AIC_OPENCODE_COMMAND` 覆盖。
 - 任务会使用独立 worktree；`constraints.test_command` 会在任务完成后执行并写入证据。
 - `constraints.requires_approval: true` 会让任务先进入 `waiting_approval`，由 CEO 生成决策卡，人类批准后才执行。
