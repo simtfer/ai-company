@@ -36,8 +36,8 @@
 4. **CEO harness 是大脑，Company Runtime 是事实来源。**  
    CEO 的对话上下文可以是易失的；任务、职位、决策、产物必须持久化。
 
-5. **长员工，短会话。**  
-   Position 是长期存在的；每次任务是一个有边界的 Run。原生 harness session 只是缓存，不是记忆。
+5. **长员工，sticky session。**  
+   Position 是长期存在的；同一 Position 固定 cwd，所有任务复用同一个原生 session。新会话通过 hire 新员工获得。原生 session 仍是缓存，Position Memory、报告和 git 才是长期记忆。
 
 6. **结构化任务协议。**  
    CEO 与 Position 之间只传任务单、报告和上下文包，不传无边界的自由聊天。
@@ -287,6 +287,8 @@ hired → idle → busy → waiting_input / waiting_approval
 
 ### 8.2 核心原则：session 是缓存，不是记忆
 
+> **M4 sticky 更新**：一个 Position 固定 `workspace/cwd`，所有任务复用同一个 active session。新任务不再自动新 session；新 session 必须通过新 Position 获得。resume 失败会 blocked，不会静默新建。下面关于“新任务新 session”的历史描述仅适用于 M1 的 per-task worktree。
+
 原生 session 可能因为以下原因失效：
 
 - 过期；
@@ -341,10 +343,10 @@ Context Pack 有 token 预算，靠检索选取，不靠堆全量。涉及密钥
 
 | 场景 | 操作 | 会话策略 | 上下文 |
 |---|---|---|---|
-| 任务未验收，追加要求 | `continue` | 优先 resume，失败重建 | 原任务 + 新增指令 |
-| 已完成，但发现缺陷 | `reopen` | 同分支，新 Run | 原报告 + 缺陷证据 |
-| 新任务，但相关 | `assign` 新任务 | 新 session | 职位记忆 + 相关报告 |
-| 新任务，不相关 | `assign` 新任务 | 新 session | 只带角色/项目记忆 |
+| 任务未验收，追加要求 | `continue` | 同 cwd，优先 resume；失败 blocked | 原任务 + 新增指令 |
+| 已完成，但发现缺陷 | `reopen` | 同 cwd/session | 原报告 + 缺陷证据 |
+| 新任务，同一员工 | `assign` 新任务 | **同 cwd / 同 session** | 上一个任务报告 + 记忆 |
+| 新任务，新员工 | `hire` 新 Position | 新 cwd / 新 session | 新员工自己的记忆 |
 
 同一任务继续的流程：
 
@@ -352,7 +354,7 @@ Context Pack 有 token 预算，靠检索选取，不靠堆全量。涉及密钥
 CEO → Runtime: continue(T-104, "年付改成 8 折")
 Runtime: 加载 thread + memory + branch
   ├─ session_ref 有效 → adapter.resume(session_ref, delta)
-  └─ session_ref 失效 → adapter.start(context_pack)
+  └─ session_ref 失效 → 任务 blocked；CEO hire 新员工
 Position: 执行 → 更新分支 → 写 HANDOFF
 Runtime: 保存报告 → 更新记忆 → 放进 inbox
 CEO: 下次对话时汇报

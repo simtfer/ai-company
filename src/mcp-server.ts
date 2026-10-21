@@ -267,6 +267,7 @@ export function buildMcpServer(service: CompanyService): McpServer {
         model: z.string().optional(),
         workspace: z.string().optional(),
         node_id: z.string().optional(),
+        policy: z.record(z.string(), z.unknown()).optional(),
       },
     },
     async (args) =>

@@ -19,6 +19,26 @@ pnpm build:sea   # dist/aic.exe，当前平台 Node SEA 单文件
 
 Windows 生成的可执行文件是 `dist/aic.exe`；Linux 对应 `dist/aic`。
 
+## 1.1 员工、cwd 与 sticky session
+
+```text
+一个 Position = 一个员工 = 一个固定 workspace/cwd
+一个 Position = 一个 active session
+所有任务复用同一个 cwd 和 session
+```
+
+- `Position.workspace` 就是员工的实际 cwd；
+- 任务不指定 cwd、不指定 session；
+- 第一个任务 `start`，后续任务 `resume`；
+- 新员工必须指定新 workspace，得到新 cwd、新 session；
+- 同一 active workspace 不能绑定多个员工；
+- 不提供 `session:rotate`；
+- resume 失败时任务 `blocked`，不会静默新建 session；
+- 每个任务记录 `start_commit`，任务 diff 只包含当前任务改动；
+- done/failed 默认 checkpoint commit，下一个任务从干净状态开始。
+
+CEO 只看 MCP 工具，不进入员工任务池。
+
 ## 2. 预算
 
 ```bash

@@ -70,6 +70,7 @@ C. 先保留占位符
 
 ## 质量与成本（M4）
 
+- 一个 Position 是员工：`workspace` 是它的固定 cwd，所有任务复用同一个 session。需要新会话时 hire 新员工 + 新 workspace，不要试图给任务换 cwd 或 rotate session。
 - 派工前用 `company_budget_status` 检查公司/职位预算；预算不足时不要硬派。
 - 失败任务先看 `max_retries` 是否自动重试；需要人工重试时用 `company_task_retry`。
 - 多个并行任务完成后，先用 `company_integration_create` 合并到 `integration/<thread>` 并跑全量测试；不要只看单个任务 done。

@@ -45,7 +45,7 @@
 | M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
 | M2 多电脑节点 | ✅ 已完成 | 2026-10-21 | 21 tests；`pnpm demo:multi-node`；两个 HTTP node agent |
 | M3 IM / 语音 | ⏸ 暂缓 | — | 按用户决定以后做 |
-| M4 质量与打包 | ✅ 核心完成 | 2026-10-21 | 29 tests；预算/重试/评审/指标/备份/SEA/服务化/实时审批 |
+| M4 质量与打包 | ✅ 核心完成 | 2026-10-21 | 34 tests；预算/重试/评审/指标/备份/SEA/服务化/实时审批/sticky session |
 
 ## 变更日志
 
@@ -130,7 +130,8 @@
 - pi 实时权限：新增 `pi-live` 适配器，生成临时 pi 扩展监听 `tool_call`，通过本地审批 HTTP 端点暂停工具；真实 pi 工具暂停并经 decision 批准后执行。
 - 测试：`test:opencode-acp` 真实验证 `acp.txt` 创建成功；`test:pi-live` 真实验证 `pi.txt` 创建成功；`test:ceo-pi` 真实验证两轮 + 集成。
 - 修复 `DEFAULT_DB_PATH` 不读取 `AIC_DB_PATH` 的问题，隔离测试库现在生效。
-- 测试：11 个测试文件、32 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
+- Position 级 sticky session：一个 Position 固定 cwd，所有任务复用同一个 active session；新员工新 cwd 新 session；session 丢失 blocked；失败任务 checkpoint commit。
+- 测试：11 个测试文件、34 个测试通过；另有可选真实集成脚本 `pnpm test:ceo-pi`。
 - 真实 CEO + 集成实测：5/5 任务 done，4 个 source branch 全部合入，集成分支 `integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
 - M4 核心完成；剩余项：远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
 

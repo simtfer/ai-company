@@ -55,6 +55,25 @@ function sanitizeBranch(value: string): string {
 export class GitWorkspaceManager {
   constructor(private readonly worktreeRoot = join(process.cwd(), ".aic", "worktrees")) {}
 
+  inspect(path: string): PreparedWorkspace {
+    const cwd = resolve(path);
+    mkdirSync(cwd, { recursive: true });
+    const top = runGit(cwd, ["rev-parse", "--show-toplevel"]);
+    if (!top.ok) {
+      return { cwd, repo: cwd, branch: "", base_ref: "", is_git: false };
+    }
+    const repo = top.stdout.trim();
+    const branch = runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    const head = runGit(cwd, ["rev-parse", "HEAD"]);
+    return {
+      cwd,
+      repo,
+      branch: branch.ok ? branch.stdout.trim() : "",
+      base_ref: head.ok ? head.stdout.trim() : "",
+      is_git: true,
+    };
+  }
+
   prepare(
     baseRepo: string,
     taskId: string,
@@ -125,6 +144,7 @@ export class GitWorkspaceManager {
     workspace: PreparedWorkspace,
     task: Task,
     runId: string,
+    startRef?: string | null,
   ): WorkspaceResult {
     if (!workspace.is_git) {
       return {
@@ -147,14 +167,12 @@ export class GitWorkspaceManager {
 
     const head = runGit(workspace.cwd, ["rev-parse", "HEAD"]);
     const commit = head.ok ? head.stdout.trim() : "";
-    const diff = runGit(workspace.cwd, [
-      "diff",
-      `${workspace.base_ref}..HEAD`,
-    ]);
+    const base = startRef || workspace.base_ref;
+    const diff = runGit(workspace.cwd, ["diff", `${base}..HEAD`]);
     const files = runGit(workspace.cwd, [
       "diff",
       "--name-only",
-      `${workspace.base_ref}..HEAD`,
+      `${base}..HEAD`,
     ]);
     const changedFiles = files.ok
       ? files.stdout

@@ -18,6 +18,7 @@ class SessionTestAdapter implements HarnessAdapter {
   startCalls = 0;
   resumeCalls = 0;
   expireResume = false;
+  readonly cwds: string[] = [];
 
   async probe(): Promise<HarnessCapabilities> {
     return {
@@ -33,6 +34,7 @@ class SessionTestAdapter implements HarnessAdapter {
     onEvent?: (event: HarnessEvent) => void,
   ): Promise<HarnessRunResult> {
     this.startCalls += 1;
+    this.cwds.push(input.cwd);
     onEvent?.({ type: "status", status: "started" });
     return this.result(input, "started fresh");
   }
@@ -43,6 +45,7 @@ class SessionTestAdapter implements HarnessAdapter {
     onEvent?: (event: HarnessEvent) => void,
   ): Promise<HarnessRunResult> {
     this.resumeCalls += 1;
+    this.cwds.push(input.cwd);
     if (this.expireResume) {
       throw new SessionExpiredError("expired for test");
     }
@@ -92,7 +95,7 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function createTask() {
+function createTaskFor(assignee = "session-1") {
   const plan = service.createPlan({
     title: "session test",
     goal: "verify session manager",
@@ -103,12 +106,16 @@ function createTask() {
         objective: "do work",
         acceptance: ["done"],
         depends_on: [],
-        assignee: "session-1",
+        assignee,
         priority: 0,
       },
     ],
   });
   return plan.tasks[0];
+}
+
+function createTask() {
+  return createTaskFor();
 }
 
 describe("session manager", () => {
@@ -126,7 +133,73 @@ describe("session manager", () => {
     expect(reports[1].summary).toContain("resumed ses_test");
   });
 
-  it("falls back to a fresh context pack when resume expires", async () => {
+  it("reuses one session and one cwd for two different tasks", async () => {
+    const plan = service.createPlan({
+      title: "two tasks",
+      goal: "same employee session",
+      tasks: [
+        {
+          key: "first",
+          title: "first",
+          objective: "first",
+          acceptance: ["done"],
+          depends_on: [],
+          assignee: "session-1",
+          priority: 1,
+        },
+        {
+          key: "second",
+          title: "second",
+          objective: "second",
+          acceptance: ["done"],
+          depends_on: ["first"],
+          assignee: "session-1",
+          priority: 0,
+        },
+      ],
+    });
+    service.assignAll(plan.thread.id);
+    await service.runReady(plan.thread.id);
+
+    expect(adapter.startCalls).toBe(1);
+    expect(adapter.resumeCalls).toBe(1);
+    expect(new Set(adapter.cwds)).toEqual(
+      new Set([join(directory, "workspace")]),
+    );
+    expect(
+      plan.tasks.every(
+        (task) => service.store.getTask(task.id)?.status === "done",
+      ),
+    ).toBe(true);
+  });
+
+  it("gives a new position a new cwd and a new session", async () => {
+    expect(() =>
+      service.hirePosition({
+        name: "session-duplicate",
+        role: "engineer",
+        harness_kind: "session-test",
+        workspace: join(directory, "workspace"),
+      }),
+    ).toThrow(/already owned/);
+    const secondWorkspace = join(directory, "workspace-2");
+    service.hirePosition({
+      name: "session-2",
+      role: "engineer",
+      harness_kind: "session-test",
+      model: "mock-model",
+      workspace: secondWorkspace,
+    });
+    const task = createTaskFor("session-2");
+    service.assignTask(task.id);
+    await service.runReady(service.store.getTask(task.id)?.thread_id);
+
+    expect(adapter.startCalls).toBe(1);
+    expect(adapter.resumeCalls).toBe(0);
+    expect(adapter.cwds).toEqual([secondWorkspace]);
+  });
+
+  it("blocks instead of starting a fresh session when resume expires", async () => {
     const task = createTask();
     service.assignTask(task.id);
     await service.runReady(service.store.getTask(task.id)?.thread_id);
@@ -134,13 +207,18 @@ describe("session manager", () => {
 
     const result = await service.continueTask(task.id, "more work");
     expect(adapter.resumeCalls).toBe(1);
-    expect(adapter.startCalls).toBe(2);
-    expect(result.report.status).toBe("done");
-    expect(result.report.summary).toContain("started fresh");
+    expect(adapter.startCalls).toBe(1);
+    expect(result.report.status).toBe("blocked");
+    expect(result.report.summary).toContain("Sticky session lost");
     expect(
       service.store
         .listEventsForTask(task.id)
-        .some((event) => event.type === "session.fallback"),
+        .some((event) => event.type === "session.lost"),
     ).toBe(true);
+    expect(
+      service.store.getSessionRef(
+        service.store.getPositionByName("session-1")!.id,
+      )?.status,
+    ).toBe("lost");
   });
 });

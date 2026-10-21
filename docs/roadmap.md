@@ -235,6 +235,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_integration_create`：同一 thread 的多个任务分支合入 `integration/<thread>`，合并后重跑全量测试；有集成任务时禁止直接合并 source task。
 - 集成冲突自动创建冲突任务，保留冲突 worktree；解决后自动重试 integration。
+- Position 级 sticky session：员工固定 cwd，所有任务共用一个 active session；新员工新 cwd 新 session；session 丢失 blocked。
 - 远程节点可用 `push_remote` 推送任务分支到共享 remote；控制平面集成前自动 fetch。
 - `company_metrics`：任务、运行、平均耗时、token/成本、重试、节点、merge queue、预算。
 - `company_memory_search`：员工手册、Position Memory、thread 摘要。
@@ -246,7 +247,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 
 ### 验收证据
 
-- `pnpm test`：11 个测试文件、32 个测试通过。
+- `pnpm test`：11 个测试文件、34 个测试通过。
 - 预算测试：公司 USD 预算为 0、分钟预算为 0 时派工被 `BudgetExceededError` 硬停。
 - 重试测试：失败任务自动重试一次，最终 failed，产生 2 份报告。
 - 评审测试：独立 review task 自动派工 + merge queue，review 完成后 ready。
@@ -262,6 +263,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 真实 CEO 集成复测：同一 thread 两轮 4 个任务 + 1 个 integration 任务全部 done；`integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
 - 共享 remote 测试：任务分支 push 到 bare remote，remote ref 与本地 commit 一致。
 - 冲突集成测试：两个任务修改同一文件产生冲突，自动创建冲突任务并解决，integration 重试后 done。
+- Sticky session 测试：同一 Position 两个不同任务只 start 一次、resume 一次，cwd 相同；resume 失败任务 blocked，不新建 session。
 - opencode ACP 实测：`session/request_permission` 暂停 Bash，人类批准后创建 `acp.txt`，内容 `ACP_OK`。
 - pi 实测：扩展 `tool_call` 暂停 bash，人类批准后创建 `pi.txt`，内容 `PI_OK`。
 
@@ -276,6 +278,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - ✅ Windows 计划任务 / Linux systemd 安装定义。
 - ✅ 卸载/升级不丢公司数据（SQLite 备份/恢复）。
 - ✅ 有可回放的审计事件和运行记录。
+- ✅ Position 级 sticky session：同一员工所有任务共用 cwd/session；新员工新 cwd/session；session 丢失 blocked。
 - ✅ 多分支集成：同一 thread 的已完成任务可合并到 integration 分支并重跑测试。
 - ✅ 集成冲突会自动创建 integrator 任务，并在解决后自动重试 integration。
 - ✅ 有集成任务时，普通 source task 不能绕过集成直接 approve merge。

@@ -108,6 +108,7 @@ function hire(name: string, kind = "file-fake"): void {
     role: "engineer",
     harness_kind: kind,
     workspace: repo,
+    policy: { worktree: true },
   });
 }
 

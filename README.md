@@ -14,7 +14,7 @@
 ```bash
 pnpm install
 pnpm demo          # Fake Harness 闭环
-pnpm test          # 32 个测试
+pnpm test          # 34 个测试
 pnpm probe         # 探测 fake / claude-code / pi / opencode
 ```
 
@@ -90,6 +90,7 @@ MCP 配置示例：
 
 ## M4 已实现
 
+- **Position 级 sticky session**：一个员工的所有任务使用固定 `workspace/cwd` 和同一个 harness session；新员工 = 新目录 = 新会话。
 - 公司/职位/任务三级 USD + 分钟预算；派工前硬停。
 - `max_retries` 自动重试 + `company_task_retry` 手动重试。
 - 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
@@ -124,8 +125,8 @@ MCP 配置示例：
 - `PiAdapter`：真实 pi 1.2.0，JSON 事件、session、usage、tool 事件。
 - 自动发现非 PATH 安装：Claude Code（nvm）、pi（WorkBuddy 内置 Node）、opencode（scoop）。
 - 自动加载 Windows 用户环境变量中的模型密钥，不落日志。
-- 每个真实任务使用独立 git worktree；完成后自动提交、生成 diff 产物。
-- Session Manager：有效 session 走 resume，过期/失败自动回退到 Context Pack 重建；三种 harness 均已实测。
+- M1 时每个真实任务使用独立 git worktree；M4 改为 Position 固定 cwd，任务复用同一个 worktree/session。
+- Session Manager：有效 session 走 resume；M4 sticky 模式下 session 失效会 blocked，不静默新建。
 - 任务级 `test_command`：测试通过/失败进入报告证据，并影响任务状态。
 - 执行前审批闸门 + 工具白名单：`requires_approval`、`allowed_tools`、`denied_tools`。
 - 运行事件写入 SQLite 和 `.aic/logs/<run_id>.jsonl`。

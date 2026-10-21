@@ -102,6 +102,7 @@ export const HirePositionInputSchema = z.object({
   workspace: z.string().optional(),
   node_id: z.string().optional(),
   budget: BudgetSchema.optional(),
+  policy: z.record(z.string(), z.unknown()).optional(),
 });
 export type HirePositionInput = z.infer<typeof HirePositionInputSchema>;
 
@@ -214,6 +215,7 @@ export interface Run {
   lease_token: string | null;
   started_at: string;
   ended_at: string | null;
+  start_commit?: string | null;
   cost: Record<string, unknown>;
   tokens: number;
   cost_usd: number;

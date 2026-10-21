@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS runs (
   lease_token TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
+  start_commit TEXT,
   cost_json TEXT NOT NULL,
   tokens INTEGER NOT NULL DEFAULT 0,
   cost_usd REAL NOT NULL DEFAULT 0
@@ -281,6 +282,7 @@ export class Store {
     this.ensureColumn("runs", "lease_token", "TEXT");
     this.ensureColumn("runs", "tokens", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("runs", "cost_usd", "REAL NOT NULL DEFAULT 0");
+    this.ensureColumn("runs", "start_commit", "TEXT");
     this.ensureColumn("merge_queue", "repo", "TEXT");
     this.ensureColumn("merge_queue", "merge_commit", "TEXT");
   }
@@ -913,8 +915,9 @@ export class Store {
       .prepare(
         `INSERT INTO runs
          (id, task_id, position_id, status, session_ref, context_pack_id,
-          node_id, lease_token, started_at, ended_at, cost_json, tokens, cost_usd)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          node_id, lease_token, started_at, ended_at, start_commit, cost_json,
+          tokens, cost_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -927,6 +930,7 @@ export class Store {
         run.lease_token,
         run.started_at,
         run.ended_at,
+        run.start_commit ?? null,
         encodeJson(run.cost),
         run.tokens,
         run.cost_usd,
@@ -1339,6 +1343,14 @@ export class Store {
       );
   }
 
+  updateSessionStatus(positionId: string, status: string): void {
+    this.db
+      .prepare(
+        "UPDATE session_refs SET status = ?, last_used_at = ? WHERE position_id = ?",
+      )
+      .run(status, nowIso(), positionId);
+  }
+
   getSessionRef(positionId: string): SessionRef | null {
     const row = this.db
       .prepare("SELECT * FROM session_refs WHERE position_id = ?")
@@ -1495,6 +1507,7 @@ export class Store {
       lease_token: (row.lease_token as string | null) ?? null,
       started_at: asString(row.started_at),
       ended_at: (row.ended_at as string | null) ?? null,
+      start_commit: (row.start_commit as string | null) ?? null,
       cost: decodeJson(row.cost_json as string, {}),
       tokens: Number(row.tokens ?? 0),
       cost_usd: Number(row.cost_usd ?? 0),

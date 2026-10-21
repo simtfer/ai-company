@@ -117,7 +117,8 @@ M1 的运行时已经通过 MCP 客户端测试验证。若当前 DSH 版本支�
 
 M1 真实执行说明：
 
-- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "pi-live" | "opencode" | "opencode-acp"` 的职位，`workspace` 指向一个 git 仓库。`claude-sdk`、`opencode-acp`、`pi-live` 支持工具执行中的实时人工审批。
+- `company_position_hire` 可以创建 `harness_kind: "claude-code" | "claude-sdk" | "pi" | "pi-live" | "opencode" | "opencode-acp"` 的职位，`workspace` 是员工的固定 cwd。`claude-sdk`、`opencode-acp`、`pi-live` 支持工具执行中的实时人工审批。
+- 同一职位的后续任务复用同一个 cwd/session；新员工必须给新 workspace，得到新 session。任务本身不指定 cwd/session。
 - 本机会自动发现：nvm 中的 Claude Code、WorkBuddy 内置的 pi、scoop 的 opencode；也可用 `AIC_CLAUDE_COMMAND` / `AIC_PI_COMMAND` / `AIC_OPENCODE_COMMAND` 覆盖。
 - 任务会使用独立 worktree；`constraints.test_command` 会在任务完成后执行并写入证据。
 - `constraints.requires_approval: true` 会让任务先进入 `waiting_approval`，由 CEO 生成决策卡，人类批准后才执行。

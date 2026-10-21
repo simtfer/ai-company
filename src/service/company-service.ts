@@ -761,6 +761,7 @@ export class CompanyService {
       instruction,
     );
     const runId = newId("r");
+    const startCommit = this.workspaceStartCommit(workspace);
     const timeoutMs = this.timeoutForTask(task);
     const abortController = new AbortController();
     const timer = setTimeout(() => abortController.abort(), timeoutMs);
@@ -777,6 +778,7 @@ export class CompanyService {
       lease_token: null,
       started_at: nowIso(),
       ended_at: null,
+      start_commit: startCommit,
       cost: {},
       tokens: 0,
       cost_usd: 0,
@@ -816,18 +818,71 @@ export class CompanyService {
       }
     } else {
       try {
+        const storedSession = this.store.getSessionRef(position.id);
         const session = this.usableSession(position, adapter, workspace);
-        if (session?.session_id && adapter.resume) {
+        if (storedSession && !session) {
+          this.store.updateSessionStatus(position.id, "lost");
+          const message =
+            "Sticky session is no longer usable; hire a new employee or explicitly rotate.";
+          this.recordRunEvent(runId, task.id, "session.lost", {
+            session_id: storedSession.session_id,
+            session_cwd: storedSession.cwd,
+            current_cwd: workspace.cwd,
+            reason: "unusable",
+          });
+          result = {
+            report: reportFor(runInput, "blocked", message, {
+              risks: [message],
+              next: ["hire a new employee with a new working directory"],
+            }),
+            events: [{ type: "error", message }],
+            usage: {},
+            exit_code: null,
+            stderr: message,
+          };
+        } else if (session?.session_id && adapter.resume) {
           try {
             result = await adapter.resume(session.session_id, runInput, eventSink);
           } catch (error) {
-            if (!(error instanceof SessionExpiredError)) throw error;
-            this.recordRunEvent(runId, task.id, "session.fallback", {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.store.updateSessionStatus(position.id, "lost");
+            this.recordRunEvent(runId, task.id, "session.lost", {
               session_id: session.session_id,
-              reason: error.message,
+              reason: message,
             });
-            result = await adapter.start(runInput, eventSink);
+            result = {
+              report: reportFor(
+                runInput,
+                "blocked",
+                `Sticky session lost: ${message}`,
+                {
+                  risks: [message],
+                  next: ["hire a new employee with a new working directory"],
+                },
+              ),
+              events: [{ type: "error", message }],
+              usage: {},
+              exit_code: null,
+              stderr: message,
+            };
           }
+        } else if (session && !adapter.resume) {
+          const message = `Adapter ${adapter.kind} does not support session resume`;
+          this.recordRunEvent(runId, task.id, "session.lost", {
+            session_id: session.session_id,
+            reason: message,
+          });
+          result = {
+            report: reportFor(runInput, "blocked", message, {
+              risks: [message],
+              next: ["use a resume-capable harness"],
+            }),
+            events: [{ type: "error", message }],
+            usage: {},
+            exit_code: null,
+            stderr: message,
+          };
         } else {
           result = await adapter.start(runInput, eventSink);
         }
@@ -870,7 +925,12 @@ export class CompanyService {
         conflict_files: result.conflict?.files ?? [],
       });
     } else try {
-      finalized = this.workspaceManager.finalize(workspace, task, runId);
+      finalized = this.workspaceManager.finalize(
+        workspace,
+        task,
+        runId,
+        startCommit,
+      );
     } catch (error) {
       finalized = {
         changes: [],
@@ -949,7 +1009,7 @@ export class CompanyService {
     const existingSession = this.store.getSessionRef(position.id);
     const sessionId =
       result.session_id ?? existingSession?.session_id ?? undefined;
-    if (sessionId) {
+    if (sessionId && validated.status !== "blocked") {
       this.store.upsertSessionRef({
         id: existingSession?.id ?? newId("s"),
         position_id: position.id,
@@ -1502,6 +1562,20 @@ export class CompanyService {
     if (node.kind !== "remote") {
       mkdirSync(workspace, { recursive: true });
     }
+    if (parsed.policy?.worktree !== true) {
+      const duplicate = this.store
+        .listPositions()
+        .find(
+          (position) =>
+            position.status !== "fired" &&
+            resolve(position.workspace) === resolve(workspace),
+        );
+      if (duplicate) {
+        throw new Error(
+          `Workspace already owned by active position "${duplicate.name}"; hire with a new working directory`,
+        );
+      }
+    }
     const position: Position = {
       id: newId("p"),
       company_id: MAIN_COMPANY_ID,
@@ -1512,7 +1586,7 @@ export class CompanyService {
       model: parsed.model ?? null,
       status: "idle",
       workspace,
-      policy: DEFAULT_POLICY,
+      policy: { ...DEFAULT_POLICY, ...(parsed.policy ?? {}) },
       budget: parsed.budget ?? { usd: 5, minutes: 60 },
       created_at: nowIso(),
     };
@@ -2528,19 +2602,6 @@ export class CompanyService {
         };
       }
     }
-    if (
-      position.harness_kind === "fake" ||
-      position.policy.worktree === false
-    ) {
-      mkdirSync(position.workspace, { recursive: true });
-      return {
-        cwd: position.workspace,
-        repo: position.workspace,
-        branch: "",
-        base_ref: "",
-        is_git: false,
-      };
-    }
     const baseRepo =
       typeof position.policy.repo_path === "string"
         ? position.policy.repo_path
@@ -2549,16 +2610,28 @@ export class CompanyService {
       typeof task.constraints.base_ref === "string"
         ? task.constraints.base_ref
         : undefined;
-    const branchName =
-      task.constraints.integration === true
-        ? `integration/${task.thread_id}`
-        : undefined;
-    return this.workspaceManager.prepare(
-      baseRepo,
-      task.id,
-      baseRef,
-      branchName,
-    );
+    if (task.constraints.integration === true) {
+      return this.workspaceManager.prepare(
+        baseRepo,
+        task.id,
+        baseRef,
+        `integration/${task.thread_id}`,
+      );
+    }
+    if (position.policy.worktree === true) {
+      return this.workspaceManager.prepare(baseRepo, task.id, baseRef);
+    }
+    return this.workspaceManager.inspect(position.workspace);
+  }
+
+  private workspaceStartCommit(workspace: PreparedWorkspace): string | null {
+    if (!workspace.is_git) return null;
+    const result = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace.cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    return result.status === 0 ? result.stdout.trim() : null;
   }
 
   private timeoutForTask(task: Task): number {

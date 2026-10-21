@@ -84,7 +84,7 @@ Repository: ${repo}
 Goal: run TWO rounds of work with two pi positions in ONE thread, then create and run an integration task.
 
 Round 1:
-- Hire pi-1 and pi-2 as harness_kind "pi", model "qianwenai/deepseek-v4.1-flash-1017", workspace "${repo}".
+- Hire pi-1 and pi-2 as harness_kind "pi", model "qianwenai/deepseek-v4.1-flash-1017", workspace "${repo}", policy {"worktree": true}.
 - Create one task DAG (company_plan_create) titled "Round 1":
   1. key "greet", assignee "pi-1": create greet.mjs exporting greet(name) returning "Hello, <name>!", create greet.test.mjs with a node:test case, keep existing files/tests.
   2. key "shout", assignee "pi-2": create shout.mjs exporting shout(text) returning text.toUpperCase(), create shout.test.mjs with a node:test case.

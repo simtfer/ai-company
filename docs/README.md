@@ -31,7 +31,7 @@ Node A / Node B（各台电脑上的 Position）
 - **CEO harness 是唯一入口。** 用户不安装第二个聊天软件。
 - **Company Runtime 无界面。** 它负责状态、调度、会话、审批、审计和远程节点。
 - **一个 harness 实例 = 一个职位。** Position 有独立工作区、配置、凭证和权限。
-- **长员工，短会话。** 原生 session 只是缓存；任务线程、Position Memory、git 分支和产物才是记忆。
+- **长员工，sticky session。** 同一 Position 固定 cwd，所有任务复用同一个原生 session；需要新会话就 hire 新员工。Position Memory、报告和 git 仍是长期记忆。
 - **先单机，再多机。** M0/M1 先跑通单机闭环，M2 再接远程节点。
 - **IM/语音后期接入。** 它们只是 CEO 的 Ingress/Egress，不绕过 CEO。
 
@@ -52,7 +52,8 @@ Node A / Node B（各台电脑上的 Position）
   - metrics、memory search、备份/恢复、日志清理、`bin/aic.mjs`。
   - `pnpm build:sea` 单文件可执行；`service:install` 生成/安装 Windows/Linux 服务。
   - 实时权限桥：`claude-sdk` 使用 `canUseTool`，`opencode-acp` 使用 ACP `session/request_permission`，`pi-live` 使用 pi 扩展 `tool_call`。
-- 验收证据：`pnpm test` 32 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+  - Position 级 sticky session：员工固定 cwd，所有任务共用同一个 session；新员工新 cwd 新 session。
+- 验收证据：`pnpm test` 34 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
 - 真实 CEO 集成：Claude Code 作为 CEO，两个 pi 职位完成两轮 4 个任务，并由集成任务合并为 `integration/<thread>`，5/5 测试通过；报告见 [ceo-pi-test.md](ceo-pi-test.md)。
 - M3 IM/语音：⏸ 暂缓（以后做）。
 - 下一步：远程凭据托管、线程标题更新，或恢复 M3。
