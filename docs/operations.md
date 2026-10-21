@@ -111,8 +111,29 @@ node bin/aic.mjs service:uninstall --apply
 - Linux：写入 `/etc/systemd/system/*.service`，启用并启动。
 - M2 的 HTTP 没有内建 TLS；跨公网请放在 Tailscale/WireGuard 或反向代理后面。
 
-## 9. 仍待补的 M4 项
+## 9. 实时权限桥（Claude SDK）
 
-- harness 工具执行中的实时权限询问桥（当前是执行前审批 + 工具白名单）。
+招聘 `harness_kind: "claude-sdk"` 的职位后，Claude 会在工具执行前调用 `canUseTool`：
+
+1. 控制平面创建 decision；
+2. 任务保持 running，Claude 进程暂停；
+3. 人类在另一个终端/客户端批准：
+
+```bash
+node bin/aic.mjs decision:list
+node bin/aic.mjs decision:resolve <decision_id> 允许
+# 或 HTTP: POST /api/decisions/:id/resolve { "chosen": "允许" }
+```
+
+4. Claude 继续执行；拒绝则返回 deny 信息。
+
+`constraints.allowed_tools` / `denied_tools` 可以先做自动判断，`auto_approve_tools: true` 可跳过人工。
+超过 `approvalTimeoutMs`（默认 5 分钟）自动拒绝。
+
+注意：如果 CEO 的 `company_run_ready` 调用正在阻塞，需要从 CLI/HTTP 侧批准；后续可把派工改成异步。
+
+## 10. 仍待补的 M4 项
+
+- pi/opencode 的原生实时 permission hook（当前只有执行前审批 + 工具白名单）。
 - 远程节点的 git 分支自动推送到共享 remote。
 - Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。

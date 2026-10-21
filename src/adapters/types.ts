@@ -7,6 +7,23 @@ export interface HarnessCapabilities {
   version?: string;
 }
 
+export interface ApprovalRequest {
+  tool_name: string;
+  input: Record<string, unknown>;
+  reason?: string;
+  blocked_path?: string;
+  suggestions?: unknown;
+}
+
+export interface ApprovalDecision {
+  allow: boolean;
+  message?: string;
+}
+
+export type ApprovalHandler = (
+  request: ApprovalRequest,
+) => Promise<ApprovalDecision>;
+
 export interface RunInput {
   run_id: string;
   task: Task;
@@ -16,6 +33,7 @@ export interface RunInput {
   instruction: string;
   timeout_ms?: number;
   signal?: AbortSignal;
+  approval_handler?: ApprovalHandler;
 }
 
 export type HarnessEvent =

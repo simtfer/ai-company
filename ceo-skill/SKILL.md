@@ -75,12 +75,13 @@ C. 先保留占位符
 - 完成后用 `company_review_request` 找独立 reviewer，不要用作者自己评审。
 - review 完成后 merge queue 进入 `ready`；只有 `ready` 才能 `company_merge_approve`。
 - 用 `company_metrics` 看成功率、耗时、token/成本和阻塞；用 `company_memory_search` 找历史决策。
+- 需要工具级实时审批时，招聘 `harness_kind: "claude-sdk"`；工具会暂停并生成 decision，用 `decision:resolve` 或 HTTP 批准。
 - 备份/恢复和日志清理见 `docs/operations.md`。
 
 ## 当前限制
 
 - claude-code、pi、opencode 均已实机验证；三个 harness 的 session 连续和代码修改均已通过。
-- 当前审批是任务执行前闸门 + 工具白名单；harness 工具执行过程中的实时权限桥还未实现。
+- `claude-sdk` 已支持工具执行中的实时审批；pi/opencode 仍只有执行前审批 + 工具白名单。
 - merge queue 的 `company_merge_approve` 会在本地 repo 执行 `git merge --ff-only`；远程仓库不可用时只记录审计状态。
 - M4 的 USD 和分钟预算都硬性执行。
 - IM/语音（M3）已暂缓；任务完成后的主动推送尚无，在下次对话用 `company_inbox` 汇报。

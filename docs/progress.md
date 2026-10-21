@@ -34,7 +34,7 @@
 | M4 备份与日志 | ✅ 已完成 | VACUUM INTO 备份、恢复、日志清理 |
 | M4 打包 | ✅ 已完成 | `pnpm build:sea` → `dist/aic.exe` |
 | M4 服务化 | ✅ 已完成 | Windows 计划任务 / Linux systemd 安装 |
-| M4 实时权限桥 | ⬜ 待补 | 当前仍是执行前审批 + 工具白名单 |
+| M4 实时权限桥 | ✅ 已完成 | Claude SDK `canUseTool` + decision 审批 |
 
 ## 阶段状态
 
@@ -45,7 +45,7 @@
 | M1 单机真实 Harness | ✅ 已完成 | 2026-10-21 | 18 tests；三个 harness 连通/会话/代码修改均实测 |
 | M2 多电脑节点 | ✅ 已完成 | 2026-10-21 | 21 tests；`pnpm demo:multi-node`；两个 HTTP node agent |
 | M3 IM / 语音 | ⏸ 暂缓 | — | 按用户决定以后做 |
-| M4 质量与打包 | ✅ 核心完成 | 2026-10-21 | 28 tests；预算/重试/评审/指标/备份/SEA/服务化 |
+| M4 质量与打包 | ✅ 核心完成 | 2026-10-21 | 29 tests；预算/重试/评审/指标/备份/SEA/服务化/实时审批 |
 
 ## 变更日志
 
@@ -121,13 +121,14 @@
 - 打包：`pnpm build`（单文件 ESM）和 `pnpm build:sea`（当前平台 `dist/aic.exe`）。
 - 服务化：`service:install` 生成/安装 Windows 计划任务或 Linux systemd unit；`service:uninstall`。
 - 预算：分钟级公司/职位/任务预算也参与硬停；任务超时/超预算转 blocked。
-- 测试：9 个测试文件、28 个测试通过，新增分钟预算、真实 git merge 等。
-- M4 核心完成；剩余项：实时权限询问桥、远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
+- 实时权限桥：新增 `claude-sdk` 适配器，使用 Claude Agent SDK `canUseTool`；工具执行前写 decision，等待 `decision:resolve` / HTTP 审批；真实 Claude smoke test 创建文件成功。
+- 测试：10 个测试文件、29 个测试通过，新增实时审批、分钟预算、真实 git merge 等。
+- M4 核心完成；剩余项：远程 git 分支自动推送、Windows 原生 NSSM/WinSW 服务模式。
 
 ## 下一步
 
-1. 补 harness 工具执行中的实时权限询问桥。
-2. 补远程节点 git 分支自动推送到共享 remote。
+1. 补远程节点 git 分支自动推送到共享 remote。
+2. 评估是否把实时权限桥扩展到 pi/opencode（当前仅 Claude SDK 支持原生 canUseTool）。
 3. M3 IM/语音保持设计，等以后恢复。
 4. 每完成一个阶段，更新本文件的阶段状态、变更日志和验收证据。
 
@@ -137,6 +138,6 @@
 - 风险：M2 使用 HTTP 拉取，没有内建 TLS；跨公网必须用 Tailscale/WireGuard 或反向代理。
 - 风险：远程 git 分支目前留在节点本地；跨机器合并需要共享 git remote 或 bundle 回传。
 - 风险：三个 harness 的 CLI 参数会随版本变化；adapter 依赖 `probe()` 和契约测试，升级后需要重新验证。
-- 风险：当前审批是任务级执行前闸门 + 工具白名单；harness 工具执行中的实时权限询问桥尚未实现。
+- 风险：实时权限桥目前只覆盖 Claude SDK（`claude-sdk`）；pi/opencode 仍只能使用执行前审批 + 工具白名单。
 - 风险：当前 DSH 版本的原生 MCP 配置尚未接入；MCP stdio 已用客户端验证，接入方式见 `docs/ceo-harness-setup.md`。
 - 风险：CEO harness 的主动通知受回合制限制；M3 暂缓，因此目前仍只能在下一次对话用 `company_inbox` 汇报增量。

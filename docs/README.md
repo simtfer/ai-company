@@ -50,9 +50,10 @@ Node A / Node B（各台电脑上的 Position）
   - USD + 分钟预算硬停、自动/手动重试、独立 review 自动派工、真实 git merge。
   - metrics、memory search、备份/恢复、日志清理、`bin/aic.mjs`。
   - `pnpm build:sea` 单文件可执行；`service:install` 生成/安装 Windows/Linux 服务。
-- 验收证据：`pnpm test` 28 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
+  - Claude SDK 实时权限桥：`claude-sdk` 工具执行前暂停，等待人类 decision。
+- 验收证据：`pnpm test` 29 passed、`pnpm build:sea`、`pnpm demo:*`、`pnpm metrics`、`pnpm budget`、`pnpm backup`。
 - M3 IM/语音：⏸ 暂缓（以后做）。
-- 下一步：实时权限桥、远程 git 分支推送，或恢复 M3。
+- 下一步：pi/opencode 实时权限、远程 git 分支推送，或恢复 M3。
 
 ## 更新规则
 

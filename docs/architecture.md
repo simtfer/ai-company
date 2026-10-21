@@ -251,6 +251,7 @@ interface HarnessAdapter {
 |---|---|---|
 | CEO | DSH / DeepSeek | 原生 runtime + 管理工具 |
 | 前端/后端 | Claude Code | 非交互 JSON 流 + session resume |
+| 需要实时审批 | Claude SDK | `canUseTool` 暂停 + decision 批准 |
 | 全栈/脚本 | opencode | CLI 适配器 |
 | 调研/文档 | pi | `-p --mode json` + `--session-id` |
 | 兜底 | 任意 CLI | 可配置命令、输入方式、JSONL 解析器（后续） |
@@ -258,6 +259,8 @@ interface HarnessAdapter {
 具体参数以本机 `--help` 为准，不硬编码某个版本的 flag。
 
 M1 实测：opencode `1.18.35` 使用 `run --format json`、`--session` 恢复；Claude Code `2.1.304` 使用 `-p --output-format stream-json`、`--resume`；pi `1.2.0` 使用 `-p --mode json`、`--session-id`。三者均完成真实 session 连续和代码修改验证。
+
+M4 新增 `claude-sdk` adapter：通过 Claude Agent SDK 的 `canUseTool` 在工具执行前暂停，创建 decision 并等待人类批准/拒绝；pi/opencode 仍使用执行前审批 + 工具白名单。
 
 ### 7.3 职位生命周期
 

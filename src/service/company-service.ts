@@ -38,6 +38,8 @@ import { FakeHarness } from "../adapters/fake";
 import {
   SessionExpiredError,
   reportFor,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type HarnessAdapter,
   type HarnessCapabilities,
   type HarnessEvent,
@@ -95,6 +97,7 @@ export interface CompanyServiceOptions {
   adapters?: HarnessAdapter[];
   workspaceManager?: GitWorkspaceManager;
   remoteWaitMs?: number;
+  approvalTimeoutMs?: number;
 }
 
 export interface PlanResult {
@@ -139,6 +142,7 @@ export class CompanyService {
   readonly workspaceManager: GitWorkspaceManager;
   private readonly adapters = new Map<string, HarnessAdapter>();
   private readonly remoteWaitMs: number;
+  private readonly approvalTimeoutMs: number;
 
   constructor(options: CompanyServiceOptions = {}) {
     this.store = new Store(options.dbPath ?? DEFAULT_DB_PATH);
@@ -146,6 +150,7 @@ export class CompanyService {
     this.workspaceManager =
       options.workspaceManager ?? new GitWorkspaceManager();
     this.remoteWaitMs = options.remoteWaitMs ?? 10 * 60_000;
+    this.approvalTimeoutMs = options.approvalTimeoutMs ?? 5 * 60_000;
     this.registerAdapter(this.fake);
     for (const adapter of options.adapters ?? []) {
       this.registerAdapter(adapter);
@@ -614,6 +619,8 @@ export class CompanyService {
       instruction: instruction?.trim() || task.objective,
       timeout_ms: timeoutMs,
       signal: abortController.signal,
+      approval_handler: (request) =>
+        this.handleToolApproval(task, position, request),
     };
     const eventSink = (event: HarnessEvent): void => {
       this.recordHarnessEvent(runId, task.id, event);
@@ -1803,6 +1810,85 @@ export class CompanyService {
       created_at: nowIso(),
     });
     return this.store.getMergeQueueEntry(entry.id) as unknown as Record<string, unknown>;
+  }
+
+  private async handleToolApproval(
+    task: Task,
+    position: Position,
+    request: ApprovalRequest,
+  ): Promise<ApprovalDecision> {
+    if (this.toolIsAllowed(task, request)) {
+      return { allow: true };
+    }
+    const decision: Decision = {
+      id: newId("d"),
+      company_id: MAIN_COMPANY_ID,
+      thread_id: task.thread_id,
+      task_id: task.id,
+      question: `${position.name} 请求执行工具 ${request.tool_name}：${JSON.stringify(request.input).slice(0, 1200)}`,
+      options: ["允许", "拒绝"],
+      status: "open",
+      chosen: null,
+      rationale: null,
+      created_at: nowIso(),
+      resolved_at: null,
+    };
+    this.store.insertDecision(decision);
+    this.store.insertEvent({
+      id: newId("e"),
+      run_id: null,
+      task_id: task.id,
+      type: "approval.requested",
+      payload: {
+        decision_id: decision.id,
+        tool_name: request.tool_name,
+        input: request.input,
+        reason: request.reason,
+      },
+      created_at: nowIso(),
+    });
+
+    const deadline = Date.now() + this.approvalTimeoutMs;
+    while (Date.now() < deadline) {
+      const current = this.store.getDecision(decision.id);
+      if (current?.status === "resolved") {
+        const allow = /allow|approve|允许|批准|yes/i.test(
+          current.chosen ?? "",
+        );
+        return {
+          allow,
+          message: allow
+            ? undefined
+            : current.rationale ?? "Denied by human",
+        };
+      }
+      await sleep(200);
+    }
+    this.store.resolveDecision(
+      decision.id,
+      "拒绝",
+      "approval timed out",
+    );
+    return { allow: false, message: "Tool approval timed out" };
+  }
+
+  private toolIsAllowed(task: Task, request: ApprovalRequest): boolean {
+    if (task.constraints.auto_approve_tools === true) return true;
+    const denied = Array.isArray(task.constraints.denied_tools)
+      ? (task.constraints.denied_tools as unknown[]).map(String)
+      : [];
+    const allowed = Array.isArray(task.constraints.allowed_tools)
+      ? (task.constraints.allowed_tools as unknown[]).map(String)
+      : [];
+    const haystack = `${request.tool_name} ${JSON.stringify(request.input)}`;
+    const matches = (pattern: string): boolean => {
+      const escaped = pattern
+        .replaceAll(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replaceAll("*", ".*");
+      return new RegExp(`^${escaped}$`, "i").test(haystack);
+    };
+    if (denied.some(matches)) return false;
+    return allowed.some(matches);
   }
 
   private assertBudget(task: Task, position: Position): void {

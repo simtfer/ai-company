@@ -128,7 +128,7 @@ Claude Code 2.1.304、pi 1.2.0、opencode 1.18.35 均已实机验证。
 - ✅ 工具白名单可限制 Claude Code / pi 的工具集合。
 - ✅ Runtime 重启后任务、报告、session 引用可恢复。
 - ✅ 测试失败会阻断任务完成。
-- ⚠️ 当前审批是任务级执行前闸门 + 工具白名单；harness 工具执行中的实时权限询问桥尚未实现，后置到 M2/M4。
+- ⚠️ M1 时只有任务级执行前闸门 + 工具白名单；M4 已为 Claude SDK 增加实时权限桥。
 
 ### 不做
 
@@ -238,11 +238,12 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - `backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`。
 - `pnpm build`（单文件 ESM）、`pnpm build:sea`（当前平台单文件 `dist/aic.exe`）。
 - `service:install` 生成/安装 Windows 计划任务或 Linux systemd unit。
+- Claude SDK 实时权限桥：`claude-sdk` 使用 `canUseTool`，工具执行前创建 decision，等待 `decision:resolve` / HTTP 审批。
 - `docs/operations.md`：预算、指标、评审、打包、备份、服务化说明。
 
 ### 验收证据
 
-- `pnpm test`：9 个测试文件、28 个测试通过。
+- `pnpm test`：10 个测试文件、29 个测试通过。
 - 预算测试：公司 USD 预算为 0、分钟预算为 0 时派工被 `BudgetExceededError` 硬停。
 - 重试测试：失败任务自动重试一次，最终 failed，产生 2 份报告。
 - 评审测试：独立 review task 自动派工 + merge queue，review 完成后 ready。
@@ -251,6 +252,8 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 备份测试：VACUUM INTO 后新 Store 能读回任务。
 - `pnpm build:sea` 生成 `dist/aic.exe`，`dist/aic.exe --version`、`budget`、`demo` 已验证。
 - `service:install --name ...` 生成 Windows 计划任务定义已验证。
+- 实时审批测试：Claude SDK `canUseTool` 暂停，human decision 允许后继续并返回 done。
+- 真实 Claude smoke test：被暂停的 Bash 工具在批准后创建 `live.txt`，内容为 `LIVE_OK`。
 
 ### 验收
 
@@ -263,7 +266,8 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - ✅ Windows 计划任务 / Linux systemd 安装定义。
 - ✅ 卸载/升级不丢公司数据（SQLite 备份/恢复）。
 - ✅ 有可回放的审计事件和运行记录。
-- ⚠️ 实时权限询问桥仍未实现（当前是执行前审批 + 工具白名单）。
+- ✅ Claude SDK 工具执行中的实时权限桥（暂停 → 人类 decision → 继续）。
+- ⚠️ pi/opencode 仍只有执行前审批 + 工具白名单，没有原生实时 permission hook。
 - ⚠️ 远程 git 分支自动推送到共享 remote 仍待补。
 - ⚠️ Windows 当前是计划任务，不是 NSSM/WinSW 原生服务。
 

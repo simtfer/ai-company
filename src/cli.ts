@@ -68,6 +68,33 @@ program
   });
 
 program
+  .command("decision:list")
+  .description("list open tool/CEO decisions")
+  .action(() => {
+    const instance = service();
+    try {
+      print(instance.store.listOpenDecisions());
+    } finally {
+      instance.close();
+    }
+  });
+
+program
+  .command("decision:resolve")
+  .description("resolve a pending tool/CEO decision")
+  .argument("<decision>")
+  .argument("<choice>")
+  .option("--rationale <text>", "decision rationale")
+  .action((decision: string, choice: string, options: { rationale?: string }) => {
+    const instance = service();
+    try {
+      print(instance.resolveDecision(decision, choice, options.rationale ?? null));
+    } finally {
+      instance.close();
+    }
+  });
+
+program
   .command("inbox")
   .description("show recent reports and open decisions")
   .action(() => {
