@@ -234,6 +234,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 独立 review task 自动派给 reviewer + merge queue（pending_review / ready / merged / rejected）。
 - `company_merge_approve` 对本地 repo 执行 `git merge --ff-only`；不可用 repo 保留审计状态。
 - `company_integration_create`：同一 thread 的多个任务分支合入 `integration/<thread>`，合并后重跑全量测试；有集成任务时禁止直接合并 source task。
+- 远程节点可用 `push_remote` 推送任务分支到共享 remote；控制平面集成前自动 fetch。
 - `company_metrics`：任务、运行、平均耗时、token/成本、重试、节点、merge queue、预算。
 - `company_memory_search`：员工手册、Position Memory、thread 摘要。
 - `backup`（SQLite VACUUM INTO）、`restore`、`logs:prune`。
@@ -244,7 +245,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 
 ### 验收证据
 
-- `pnpm test`：11 个测试文件、30 个测试通过。
+- `pnpm test`：11 个测试文件、31 个测试通过。
 - 预算测试：公司 USD 预算为 0、分钟预算为 0 时派工被 `BudgetExceededError` 硬停。
 - 重试测试：失败任务自动重试一次，最终 failed，产生 2 份报告。
 - 评审测试：独立 review task 自动派工 + merge queue，review 完成后 ready。
@@ -258,6 +259,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - 真实 CEO 集成：Claude Code 作为 CEO，两个真实 pi 职位连续两轮 4 个任务全部 done，`node --test` 均通过；见 [ceo-pi-test.md](ceo-pi-test.md)。
 - 多分支集成测试：临时 git repo 上合并两个独立任务分支，集成分支同时包含两个文件，集成测试通过；source task 被禁止直接 approve。
 - 真实 CEO 集成复测：同一 thread 两轮 4 个任务 + 1 个 integration 任务全部 done；`integration/th_c4891b95f4f4` 上 `node --test` 5/5 pass。
+- 共享 remote 测试：任务分支 push 到 bare remote，remote ref 与本地 commit 一致。
 
 ### 验收
 
@@ -272,6 +274,7 @@ CEO 能管理另一台电脑上的 Position，并统一调度。
 - ✅ 有可回放的审计事件和运行记录。
 - ✅ 多分支集成：同一 thread 的已完成任务可合并到 integration 分支并重跑测试。
 - ✅ 有集成任务时，普通 source task 不能绕过集成直接 approve merge。
+- ✅ 远程节点可把分支 push 到共享 remote，集成前自动 fetch。
 - ✅ Claude SDK 工具执行中的实时权限桥（暂停 → 人类 decision → 继续）。
 - ⚠️ pi/opencode 仍只有执行前审批 + 工具白名单，没有原生实时 permission hook。
 - ⚠️ 远程 git 分支自动推送到共享 remote 仍待补。

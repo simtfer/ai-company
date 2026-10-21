@@ -182,6 +182,40 @@ export class RemoteTaskExecutor {
     const evidence = [...result.report.evidence];
     const risks = [...result.report.risks];
     let failedByTest = false;
+    let failedByPush = false;
+    const pushSetting =
+      task.constraints.push_remote ?? position.policy.push_remote;
+    if (
+      finalized.changes.length > 0 &&
+      (pushSetting === true || typeof pushSetting === "string")
+    ) {
+      const pushed = this.workspaceManager.push(
+        workspace,
+        typeof pushSetting === "string" ? pushSetting : "origin",
+      );
+      if (pushed.ok) {
+        evidence.push({
+          kind: "git_push",
+          remote: pushed.remote,
+          ref: pushed.ref,
+          branch: pushed.branch,
+        });
+        for (const change of finalized.changes) {
+          change.remote = pushed.remote;
+          change.pushed_ref = pushed.ref;
+        }
+      } else {
+        failedByPush = true;
+        risks.push(`git push failed: ${pushed.stderr || pushed.ref}`);
+        evidence.push({
+          kind: "git_push",
+          remote: pushed.remote,
+          ref: pushed.ref,
+          result: "failed",
+          error: pushed.stderr,
+        });
+      }
+    }
 
     if (test) {
       failedByTest = !test.passed;
@@ -207,12 +241,14 @@ export class RemoteTaskExecutor {
       });
     }
 
-    const status: Report["status"] = failedByTest
-      ? "failed"
-      : result.report.status;
+    const status: Report["status"] =
+      failedByTest || failedByPush ? "failed" : result.report.status;
     let summary = result.report.summary;
     if (failedByTest) {
       summary += `\n\n测试失败（${test?.command}）：\n${test?.output.slice(-1500)}`;
+    }
+    if (failedByPush) {
+      summary += `\n\n共享分支推送失败，控制平面无法集成此分支。`;
     }
     const branch = workspace.branch || result.report.handoff.branch;
     const next =
@@ -244,6 +280,7 @@ export class RemoteTaskExecutor {
         open_issues: [
           ...result.report.handoff.open_issues,
           ...(failedByTest ? [`测试失败：${task.constraints.test_command}`] : []),
+          ...(failedByPush ? ["git push 失败"] : []),
         ],
         next_steps:
           result.report.handoff.next_steps.length > 0

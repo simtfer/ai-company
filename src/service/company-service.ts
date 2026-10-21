@@ -966,9 +966,10 @@ export class CompanyService {
         : [];
       const change = changes.find(
         (entry) =>
-          typeof entry.repo === "string" &&
           typeof entry.commit === "string" &&
-          resolve(entry.repo) === resolve(workspace.repo),
+          (typeof entry.pushed_ref === "string" ||
+            (typeof entry.repo === "string" &&
+              resolve(entry.repo) === resolve(workspace.repo))),
       );
       if (!change || typeof change.commit !== "string") {
         skipped.push({
@@ -979,6 +980,32 @@ export class CompanyService {
         continue;
       }
       if (merged.some((entry) => entry.commit === change.commit)) continue;
+      const hasCommit = spawnSync(
+        "git",
+        ["cat-file", "-e", `${change.commit}^{commit}`],
+        { cwd: workspace.cwd, encoding: "utf8", windowsHide: true },
+      );
+      if (hasCommit.status !== 0) {
+        spawnSync("git", ["fetch", "--all", "--prune"], {
+          cwd: workspace.cwd,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 60_000,
+        });
+        const afterFetch = spawnSync(
+          "git",
+          ["cat-file", "-e", `${change.commit}^{commit}`],
+          { cwd: workspace.cwd, encoding: "utf8", windowsHide: true },
+        );
+        if (afterFetch.status !== 0) {
+          skipped.push({
+            task_id: source.id,
+            title: source.title,
+            reason: "commit unavailable after fetch",
+          });
+          continue;
+        }
+      }
       const merge = spawnSync(
         "git",
         ["merge", "--no-ff", "--no-edit", change.commit],

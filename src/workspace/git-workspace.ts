@@ -16,6 +16,8 @@ export interface WorkspaceChanges {
   branch: string;
   commit: string;
   files: string[];
+  remote?: string;
+  pushed_ref?: string;
 }
 
 export interface WorkspaceResult {
@@ -184,6 +186,33 @@ export class GitWorkspaceManager {
       changed_files: changedFiles,
       diff_path: diffPath,
       diff: diffText,
+    };
+  }
+
+  push(
+    workspace: PreparedWorkspace,
+    remote = "origin",
+  ): { ok: boolean; remote: string; branch: string; ref: string; stderr: string } {
+    if (!workspace.is_git || !workspace.branch) {
+      return {
+        ok: false,
+        remote,
+        branch: workspace.branch,
+        ref: "",
+        stderr: "not a git worktree",
+      };
+    }
+    const result = runGit(workspace.cwd, [
+      "push",
+      remote,
+      `HEAD:refs/heads/${workspace.branch}`,
+    ]);
+    return {
+      ok: result.ok,
+      remote,
+      branch: workspace.branch,
+      ref: `${remote}/${workspace.branch}`,
+      stderr: result.stderr,
     };
   }
 

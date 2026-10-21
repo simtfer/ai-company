@@ -89,6 +89,34 @@ CEO 正常创建计划、指派任务、调用 `company_run_ready`。控制平�
 - 测试输出和 git diff 会写入控制平面的 `.aic/artifacts/remote-*`；
 - 如果节点失联，租约过期后任务自动回到 `assigned`，等待重新领取。
 
+### 5.1 共享 git remote
+
+远程任务默认把分支留在节点本地；如果控制平面要集成这些分支，需要让节点把分支推到共享 remote。
+
+节点仓库先配置好 remote（例如 `origin`），任务或职位策略打开推送：
+
+```json
+{
+  "constraints": {
+    "push_remote": "origin"
+  }
+}
+```
+
+或职位 policy：
+
+```json
+{
+  "policy": {
+    "push_remote": "origin"
+  }
+}
+```
+
+推送成功后报告里的 change 会增加 `remote` / `pushed_ref`；推送失败任务会 failed，避免控制平面误以为分支可用。
+
+控制平面做 integration 时，如果本地没有 source commit，会先执行 `git fetch --all --prune`，再合并。因此控制平面仓库必须和节点指向同一个 shared remote。
+
 ## 6. 节点管理
 
 MCP 工具：

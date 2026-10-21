@@ -74,7 +74,7 @@ company_integration_create {
 然后正常 `company_task_assign_all` + `company_run_ready`。集成任务会：
 
 - 读取该 thread 中所有已完成任务的最新 report；
-- 按 source task 顺序执行 `git merge --no-ff <commit>`；
+- 按 source task 顺序执行 `git merge --no-ff <commit>`；本地缺少 commit 时先 `git fetch --all --prune`；
 - 把结果放到 `integration/<thread>`；
 - 在集成后的 worktree 里跑 `test_command`；
 - 产出 integration evidence 和最终 diff。
@@ -165,5 +165,5 @@ node bin/aic.mjs decision:resolve <decision_id> 允许
 
 - 集成冲突的专业 integrator 流程（当前冲突会 failed 并记录文件）。
 - pi/opencode 的原生实时 permission hook（当前只有执行前审批 + 工具白名单）。
-- 远程节点的 git 分支自动推送到共享 remote。
+- 远程共享 remote 的凭据托管与自动 push 默认策略（当前用 `push_remote` 显式开启）。
 - Windows 服务的 NSSM/WinSW 原生服务模式（当前是计划任务）。

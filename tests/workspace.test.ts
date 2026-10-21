@@ -63,4 +63,26 @@ describe("GitWorkspaceManager", () => {
       "add greet",
     );
   });
+
+  it("pushes a task branch to a shared remote", () => {
+    const bare = join(directory, "remote.git");
+    execFileSync("git", ["init", "--bare", bare], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    git(repo, ["remote", "add", "origin", bare]);
+
+    const manager = new GitWorkspaceManager(join(directory, "worktrees"));
+    const workspace = manager.prepare(repo, "t_push");
+    writeFileSync(join(workspace.cwd, "pushed.txt"), "shared\n");
+    const task = { id: "t_push", title: "push" } as Task;
+    const finalized = manager.finalize(workspace, task, "r_push");
+    const pushed = manager.push(workspace);
+
+    expect(pushed.ok).toBe(true);
+    expect(pushed.ref).toBe(`origin/${workspace.branch}`);
+    expect(
+      git(bare, ["rev-parse", `refs/heads/${workspace.branch}`]),
+    ).toBe(finalized.changes[0].commit);
+  });
 });
